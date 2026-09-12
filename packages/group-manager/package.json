@@ -48,5 +48,14 @@
   "dependencies": {
     "https-proxy-agent": "^7.0.6",
     "ipaddr.js": "^2.5.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lance0174/yunzai-koishi-plugins.git",
+    "directory": "packages/group-manager"
+  },
+  "homepage": "https://github.com/Lance0174/yunzai-koishi-plugins/tree/main/packages/group-manager#readme",
+  "bugs": {
+    "url": "https://github.com/Lance0174/yunzai-koishi-plugins/issues"
   }
 }

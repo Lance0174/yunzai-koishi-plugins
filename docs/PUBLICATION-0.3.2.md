@@ -1,12 +1,12 @@
 # Koishi 插件市场发布记录 · 2026-09-13
 
-发布账号已通过 npm `whoami` 实时确认：`emberknight`。正式上传随后被拒绝，账户校验返回 E401，已启动 npm 官方网页登录等待刷新授权。群管理、点歌发布 0.3.0，视频发布 0.3.2，标注“开发中”。发布使用公共 npm registry 的 `latest` 标签；视频的开发状态由 `koishi.preview: true` 和可见说明表达。
+发布账号已通过 npm `whoami` 实时确认：`emberknight`。旧会话正式上传被拒绝后，现已通过 npm 官方网页刷新登录，正在完成本次发布的安全验证。群管理、点歌发布 0.3.0，视频发布 0.3.2，标注“开发中”。发布使用公共 npm registry 的 `latest` 标签；视频的开发状态由 `koishi.preview: true` 和可见说明表达。
 
 ## 发布状态
 
 | 插件 | 版本 | npm | Koishi 索引 |
 | --- | --- | --- | --- |
-| koishi-plugin-yunzai-group-manager | 0.3.0 | 待发布 | 待验证 |
+| koishi-plugin-yunzai-group-manager | 0.3.0 | 发布命令已成功 | 待验证 |
 | koishi-plugin-yunzai-music-request | 0.3.0 | 待发布 | 待验证 |
 | koishi-plugin-yunzai-video-parser | 0.3.2 | 待发布 | 待验证；开发预览 |
 
@@ -18,13 +18,13 @@
 
 三个包的 TypeScript 构建与实际 tgz 发布 dry-run 均通过。升级脚本对应的两项现有测试通过。每个最终包均检查了入口、版本、README、来源及许可证；视频包的开发标识检查通过。
 
-群管与点歌 tgz 与上一轮已经独立安装验证的文件字节一致。视频只变更版本与说明，没有变更解析和媒体工具自动安装逻辑；新视频包已在独立 Koishi 4.18.11 项目中安装通过，入口加载、默认配置、命令注册与关闭检查均通过，见 artifacts/package-smoke-video-0.3.2.log。
+群管与点歌的功能文件与上一轮独立安装验证的包逐文件一致。新视频包的入口加载、默认配置、命令注册与关闭检查已在独立 Koishi 4.18.11 项目中通过，见 artifacts/package-smoke-video-0.3.2.log。用户追加 GitHub 发布要求后，三个包仅在 package.json 中补充 repository / homepage / bugs 链接，再次构建和发布 dry-run 通过；包内其余文件与这些已验证包完全一致，逐文件证据见 artifacts/github-metadata-validation.json。
 
 | 包 | SHA256 |
 | --- | --- |
-| koishi-plugin-yunzai-group-manager-0.3.0.tgz | `4cb6fe65ed80d6e4df5b02fe02ebe8f0cd45508ad52882b810612cf9b3e7eb74` |
-| koishi-plugin-yunzai-music-request-0.3.0.tgz | `1c684901d0737c140c822ff241b6a467f20555235df84c449f824d1a7be78652` |
-| koishi-plugin-yunzai-video-parser-0.3.2.tgz | `66c24982dcba715e0191228a17c78a003d7988722caa247f828bd21651d1c48c` |
+| koishi-plugin-yunzai-group-manager-0.3.0.tgz | `20bfb79ce5d0c1c4332ccf3fbaea8256f5b5d8bf98be8c55bf9d7339b991252c` |
+| koishi-plugin-yunzai-music-request-0.3.0.tgz | `acb82971d6e333924287f3289d9248aaa0a62e7fc37ff8425a0d5f1113082c8c` |
+| koishi-plugin-yunzai-video-parser-0.3.2.tgz | `966e4301f425bb1e3cb9a69e0fa4315200b79c97b353df5b4cd812276276e53b` |
 
 发布完成后，在 Koishi 项目目录运行：
 
@@ -46,6 +46,16 @@ yarn add koishi-plugin-yunzai-group-manager@0.3.0 koishi-plugin-yunzai-music-req
 | 首次 npm 正式上传遇到 ECONNRESET / TLS 建立前断开 | 回读公共 npm 确认包仍为 404 后重试，避免误报发布成功 |
 | 第二次 npm 上传返回 PUT E404，进一步 npm profile get 返回 E401 并要求重新登录 | 不改名规避；启动官方 npm login 网页流程，等待账号持有人完成 CLI 验证 |
 | 新视频包独立安装显示上游 @koa/router@10.1.1 的 deprecated 提示 | 属于现有 Koishi 依赖树；安装和加载成功，未改动宿主版本 |
+
+| 旧 npm 登录链接过期；重新生成时首次请求发生 ECONNRESET | 重试取得新官方链接，用户完成授权，CLI 已确认登录成功 |
+| GitHub CLI 多次出现 TLS 握手超时 / EOF；未登录的公共 API 查询触发限流 403 | 使用已登录 gh 做只读确认；在单次进程内调整连接方式后恢复，没有修改全局代理或账号安全设置 |
+| 创建 GitHub 仓库的首次 POST 返回 EOF | 先回读确认仓库仍为 404，再重试创建，最终成功创建 Lance0174/yunzai-koishi-plugins |
+
+## GitHub 发布
+
+源码仓库：[Lance0174/yunzai-koishi-plugins](https://github.com/Lance0174/yunzai-koishi-plugins)。已为三个 npm 包添加对应源码目录、README 和问题反馈链接。GitHub Actions 将在 Ubuntu / Node.js 22 上执行完整现有测试、打包与三个独立 Koishi 4.18.11 安装检查。源码先推送用于运行 CI；待三个 npm 包发布完成后发布 v0.3.2 Release。Actions 和 Release 的最终状态在实际完成后回填。
+
+GitHub Release 将分别提供群管理与点歌 0.3.0、视频 0.3.2（开发中）、完整源码 ZIP、迁移脚本及 SHA256 校验文件。
 
 ## 验收边界
 

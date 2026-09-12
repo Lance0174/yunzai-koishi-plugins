@@ -1,0 +1,42 @@
+name: Build and verify plugins
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install test media tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Test plugins
+        run: npm test
+      - name: Build release packages
+        run: npm run pack:all
+      - name: Verify independent Koishi installations
+        run: npm run test:packages
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-plugin-packages
+          path: |
+            artifacts/packages/*.tgz
+            artifacts/packages/manifest.json
+            artifacts/packages/SHA256SUMS
+            artifacts/package-smoke.json
+          if-no-files-found: error

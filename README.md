@@ -2,6 +2,8 @@
 
 当前版本：群管理 / 点歌 0.3.0，视频解析 0.3.2（开发中，自动安装媒体工具）。视频插件使用 Koishi 市场开发预览标记。
 
+[源码仓库](https://github.com/Lance0174/yunzai-koishi-plugins) · [GitHub Releases](https://github.com/Lance0174/yunzai-koishi-plugins/releases) · [问题反馈](https://github.com/Lance0174/yunzai-koishi-plugins/issues)
+
 感谢 [小飞 / xfdown](https://gitee.com/xfdown/xiaofei-plugin)、[R-plugin / kyrzy0416](https://gitee.com/kyrzy0416/rconsole-plugin)、[椰奶 / yeyang52](https://github.com/yeyang52/yenai-plugin)、[GroupEntry / A1Panda](https://github.com/A1Panda/GroupEntry_Plugin) 及各项目贡献者提供的原功能设计。这里是面向 Koishi 4.18.11、OneBot v11 / SnowLuma 的迁移实现。每个安装包均附作者、原仓库和许可证说明，Koishi 控制台也显示来源。
 
 | 独立插件 | 包名 | 默认行为 |

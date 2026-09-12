@@ -44,5 +44,14 @@
     "ipaddr.js": "^2.5.0",
     "json5": "^2.2.3",
     "qrcode": "^1.5.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lance0174/yunzai-koishi-plugins.git",
+    "directory": "packages/music"
+  },
+  "homepage": "https://github.com/Lance0174/yunzai-koishi-plugins/tree/main/packages/music#readme",
+  "bugs": {
+    "url": "https://github.com/Lance0174/yunzai-koishi-plugins/issues"
   }
 }
