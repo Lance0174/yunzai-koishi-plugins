@@ -1,12 +1,16 @@
 import { Context, Session, h, Bot } from 'koishi'
-import { Store, models, RequestRow, key } from './store'
+import { Store, models, RequestRow, EventRow } from './store'
 import { ActionError, duration, internal, timed, userId } from './onebot'
 import { UserError } from './errors'
+import { State, stateModel } from './state'
+import { Lists, installLists } from './lists'
+import { Notifications } from './notifications'
+import type { Host } from './support'
 
-export const name = 'ember-group-manager'
+export const name = 'yunzai-group-manager'
 export const inject = ['database']
 export const usage =
-  '先填写审核人 QQ、审核通知群和需要管理的群。审核/通知/群管可分别关闭。需要 OneBot 适配器和数据库。'
+  '日常群管默认在所有群可用，仍需真实群管理权限。事件监听和事件通知独立且默认开启，默认私聊 reviewers 中的管理员；可用“事件监听 开 --群 群号 --私聊 QQ”和“事件通知 关 成员变动”修改。黑名单忽略消息，白名单豁免处罚和验证。\n\n迁移来源：[yenai-plugin / yeyang52 及贡献者](https://github.com/yeyang52/yenai-plugin)、[GroupEntry_Plugin / A1Panda 及贡献者](https://github.com/A1Panda/GroupEntry_Plugin)。详见安装包 THIRD_PARTY_NOTICES.md。'
 export { Config } from './config'
 import { Config } from './config'
 import { installFeatures } from './features'
@@ -27,7 +31,10 @@ export function apply(ctx: Context, config: Config) {
   if (config.inviteAllow.some((id) => config.inviteDeny.includes(id)))
     throw new UserError('邀请黑白名单存在相同群号。')
   models(ctx)
+  stateModel(ctx)
   const store = new Store(ctx.database)
+  const lists = new Lists(new State(store), config)
+  let notifications: Notifications
   const logger = ctx.logger(name)
   let disposed = false,
     flushing = false
@@ -64,12 +71,15 @@ export function apply(ctx: Context, config: Config) {
       !s.channelId! ||
       !active(s.bot) ||
       !guild ||
-      (!reviewer && (!config.moderation || !config.managedGroups.includes(guild)))
+      (!reviewer &&
+        (!config.moderation || (config.managedGroups.length > 0 && !config.managedGroups.includes(guild))))
     )
       throw new UserError('此群尚未开放群管理。')
+    if (await lists.ignored(botKey(s.bot), guild, s.userId)) throw new UserError('此会话已被黑名单忽略。')
     return authorize(s.bot, guild, s.userId!, target)
   }
   async function authorize(bot: Bot, guild: string, actorId: string, target?: string) {
+    if (await lists.ignored(botKey(bot), guild, actorId)) throw new UserError('此会话已被黑名单忽略。')
     const api = internal(bot)
     let actor, self, member
     try {
@@ -139,21 +149,33 @@ export function apply(ctx: Context, config: Config) {
           )
         }
       }
-      for (const bot of ctx.bots.filter(active))
-        for (const channel of new Set(config.reviewGroups)) {
+      for (const bot of ctx.bots.filter(active)) {
+        const pending = await ctx.database.get('ember_group_event', { bot: botKey(bot), state: 'pending' })
+        for (const channel of new Set(pending.map((row) => row.channel))) {
           if (disposed) break
           const slot = `${botKey(bot)}:${channel}`
           if (Date.now() - (sentAt.get(slot) ?? 0) < config.noticeInterval) continue
           const { rows, claim } = await store.claimEvents(botKey(bot), channel, config.apiTimeout + 30_000)
           if (!rows.length) continue
+          const deliverable: EventRow[] = []
+          for (const row of rows) {
+            if (await notifications.canDeliver(bot, row)) deliverable.push(row)
+            else
+              await ctx.database.set(
+                'ember_group_event',
+                { id: row.id, claim },
+                { state: 'cancelled', lease: 0 },
+              )
+          }
+          if (!deliverable.length) continue
           sentAt.set(slot, Date.now())
           try {
             const ids = await timed(
               () =>
-                bot.sendMessage(
-                  channel,
+                (channel.startsWith('p:') ? bot.sendPrivateMessage.bind(bot) : bot.sendMessage.bind(bot))(
+                  channel.startsWith('p:') || channel.startsWith('g:') ? channel.slice(2) : channel,
                   text(
-                    rows
+                    deliverable
                       .map((row) => `${row.summary}${row.count > 1 ? `（${row.count} 条）` : ''}`)
                       .join('\n\n'),
                   ),
@@ -169,6 +191,7 @@ export function apply(ctx: Context, config: Config) {
             logger.warn('群事件摘要发送失败或结果未知；已保留投递状态，不自动重发。')
           }
         }
+      }
     } finally {
       flushing = false
     }
@@ -183,7 +206,13 @@ export function apply(ctx: Context, config: Config) {
     return `[${r.code}] ${r.kind === 'invite' ? '机器人群邀请' : '成员入群申请'}\n机器人：${r.selfId}\n群：${r.guildId}；申请人：${r.userId}\n状态：${labels[r.state] ?? r.state}\n申请时间：${new Date(r.created).toLocaleString('zh-CN')}\n备注：${r.comment || '无'}${policy}`
   }
   async function receive(s: Session, kind: string) {
-    if (!config.reviews || !active(s.bot) || !s.guildId!) return
+    if (
+      !config.reviews ||
+      !active(s.bot) ||
+      !s.guildId! ||
+      (await lists.ignored(botKey(s.bot), s.guildId, s.userId))
+    )
+      return
     const request = await store.receive(
       {
         bot: botKey(s.bot),
@@ -222,54 +251,6 @@ export function apply(ctx: Context, config: Config) {
   ctx.on('guild-request', (s) => guardedEvent(() => receive(s, 'invite')))
   ctx.on('guild-member-request', (s) => guardedEvent(() => receive(s, 'member')))
 
-  const notices = [
-    'guild-added',
-    'guild-deleted',
-    'guild-member-added',
-    'guild-member-deleted',
-    'guild-member',
-    'message-deleted',
-  ] as const
-  for (const event of notices)
-    ctx.on(event as 'guild-added', (s) =>
-      guardedEvent(async () => {
-        if (!config.notices || !active(s.bot) || !s.guildId! || !config.managedGroups.includes(s.guildId!))
-          return
-        if (event === 'guild-member' && !['role', 'ban'].includes(s.subtype)) return
-        const id = key(
-          botKey(s.bot),
-          event,
-          s.guildId!,
-          s.userId! ?? '',
-          s.operatorId ?? '',
-          s.messageId ?? '',
-          s.subtype ?? '',
-          String(s.event.timestamp ?? ''),
-        )
-        const now = Date.now()
-        if (seen.has(id) && now - seen.get(id)! < 60_000) return
-        seen.set(id, now)
-        if (seen.size > 2000) for (const [k, time] of seen) if (now - time > 60_000) seen.delete(k)
-        if (seen.size > 2000) seen.delete(seen.keys().next().value!)
-        const titles: Record<string, string> = {
-          'guild-added': '机器人入群',
-          'guild-deleted': '机器人退群/被移出',
-          'guild-member-added': '成员加入',
-          'guild-member-deleted': '成员退出/被移出',
-          'guild-member': s.subtype === 'ban' ? '禁言状态变更' : '管理员变更',
-          'message-deleted': '群消息撤回',
-        }
-        for (const channel of new Set(config.reviewGroups)) {
-          await store.enqueueEvent(
-            botKey(s.bot),
-            channel,
-            id,
-            `${titles[event]}\n机器人：${s.selfId}；群：${s.guildId!}\n成员：${s.userId! || '未知'}；操作人：${s.operatorId || '未知'}`,
-          )
-        }
-        await flush()
-      }),
-    )
   ctx.on('ready', () => guardedEvent(flush))
   ctx.setInterval(() => guardedEvent(flush), Math.max(1000, config.noticeInterval))
   ctx.setInterval(
@@ -432,6 +413,8 @@ export function apply(ctx: Context, config: Config) {
       const s = session!
       await permission(s)
       if (!['开', '关'].includes(value)) throw new UserError('参数只能是“开”或“关”。')
+      if (value === '开' && (await lists.groupExempt(botKey(s.bot), s.guildId!)))
+        throw new UserError('该群在处罚豁免白名单中。')
       return perform(s, value === '开' ? 'mute-all' : 'unmute-all', s.guildId!, () =>
         s.bot.muteChannel(s.channelId!, s.guildId!, value === '开'),
       )
@@ -496,11 +479,12 @@ export function apply(ctx: Context, config: Config) {
       )
     }),
   )
-  const features = installFeatures({
+  const host: Host = {
     ctx,
     config,
     root,
     store,
+    lists,
     active,
     botKey,
     permission,
@@ -509,7 +493,13 @@ export function apply(ctx: Context, config: Config) {
     guard,
     requireReview,
     flush,
-  })
+    notifyVerification: (bot, guild, user, eventId) =>
+      notifications.verificationTimeout(bot, guild, user, eventId),
+  }
+  notifications = new Notifications(host, lists.state)
+  notifications.install()
+  const features = installFeatures(host)
+  installLists(host)
   if (config.shortcuts)
     for (const verb of ['禁言', '解禁', '踢人', '全员禁言', '名片', '撤回']) {
       ctx.$commander.resolve(`${config.command}.${verb}`)?.alias(verb)

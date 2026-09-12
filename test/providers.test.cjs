@@ -155,7 +155,7 @@ const config = {
   kugouApi: '',
   kugouCookie: '',
 }
-const music = new Providers(config)
+const music = new Providers(config, async (source) => (source === 'netease' ? 'never-in-query' : ''))
 const videos = new VideoProviders({
   ...config,
   biliCookie: '',

@@ -125,13 +125,14 @@ async function protocol(app) {
       else if (action === 'download_file') data = { file: '/protocol-cache/audio.mp3' }
       else if (action.startsWith('send_') && action.endsWith('_msg')) {
         data = { message_id: ++sequence }
-        const row = { ...event(params.message, 900001, params.group_id), message_id: data.message_id }
+        const parts = params.message ?? params.messages.flatMap((node) => node.data.content ?? [])
+        const row = { ...event(parts, 900001, params.group_id), message_id: data.message_id }
         messages.set(String(data.message_id), row)
         sent.push({
           action,
-          params,
+          params: { ...params, message: parts },
           id: String(data.message_id),
-          text: params.message
+          text: parts
             .filter((s) => s.type === 'text')
             .map((s) => s.data.text)
             .join(''),

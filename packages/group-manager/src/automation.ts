@@ -1,6 +1,6 @@
 import { Bot, Session, Universal } from 'koishi'
 import { randomInt, randomUUID, createHash } from 'node:crypto'
-import { Host, bounded, commandFor, plain, scope, exempt } from './support'
+import { Host, bounded, commandFor, plain, scope } from './support'
 import { State, DataRow } from './state'
 import { RequestRow, key } from './store'
 import { ActionError, duration, internal, timed, userId } from './onebot'
@@ -20,7 +20,7 @@ const freshCode = () => randomUUID().replaceAll('-', '').slice(0, 12).toUpperCas
 export function installAutomation(host: Host, state: State) {
   const { ctx, config, botKey, permission, guard, store } = host,
     cmd = commandFor(host)
-  const logger = ctx.logger('ember-group-manager')
+  const logger = ctx.logger('yunzai-group-manager')
   let disposed = false
   const background = new Set<Promise<unknown>>()
   const call = <T>(run: () => Promise<T>) => timed(run, config.apiTimeout)
@@ -46,8 +46,35 @@ export function installAutomation(host: Host, state: State) {
       state: status,
       detail,
     })
-  const inScope = (s: Session) => scope(host, s) && s.userId !== s.selfId
-  const policy = (s: Session, kind: string) => state.get(botKey(s.bot), s.guildId!, kind)
+  const inScope = async (s: Session) =>
+    scope(host, s) && s.userId !== s.selfId && !(await host.lists.ignored(botKey(s.bot), s.guildId, s.userId))
+  const defaultPolicy = (bot: string, guild: string, kind: string, actor: string): DataRow | undefined => {
+    const payload =
+      kind === 'vote-policy'
+        ? { votes: 3, ttl: 300000 }
+        : kind === 'verify-policy'
+          ? { ttl: 300000, kick: false }
+          : undefined
+    return payload
+      ? {
+          id: state.id(bot, guild, kind),
+          bot,
+          guildId: guild,
+          kind,
+          ref: '',
+          actor,
+          payload,
+          state: 'enabled',
+          due: 0,
+          updated: 0,
+          lease: 0,
+          claim: '',
+        }
+      : undefined
+  }
+  const policy = async (s: Session, kind: string) =>
+    (await state.get(botKey(s.bot), s.guildId!, kind)) ??
+    defaultPolicy(botKey(s.bot), s.guildId!, kind, s.selfId)
   const on = (value: string) => {
     if (!['开', '关'].includes(value)) throw new UserError('参数只能为开或关。')
     return value === '开'
@@ -70,7 +97,7 @@ export function installAutomation(host: Host, state: State) {
   }
   async function allowedTarget(bot: Bot, guild: string, actor: string, target: string) {
     const roles = await host.authorize(bot, guild, actor, target)
-    if (roles.member?.role !== 'member' || (await exempt(state, botKey(bot), guild, target)))
+    if (roles.member?.role !== 'member' || (await host.lists.exempt(botKey(bot), guild, target)))
       throw new UserError('目标是管理员或豁免成员，已跳过。')
   }
 
@@ -166,7 +193,7 @@ export function installAutomation(host: Host, state: State) {
         const s = session!,
           id = target ? userId(target) : ''
         await permission(s, id || undefined)
-        if (id && mute && (await exempt(state, botKey(s.bot), s.guildId!, id)))
+        if (id && mute && (await host.lists.exempt(botKey(s.bot), s.guildId!, id)))
           throw new UserError('该成员在处罚豁免名单中。')
         if (mute && id && !time)
           throw new UserError('成员定时禁言需要提供禁言时长，例如：定时禁言 10m @成员 30m。')
@@ -247,7 +274,7 @@ export function installAutomation(host: Host, state: State) {
       guard(async () => {
         const [target, time] = args
         const s = session!
-        if (!inScope(s)) throw new UserError('此群尚未开放群管理。')
+        if (!(await inScope(s))) throw new UserError('此群尚未开放群管理。')
         const p = await policy(s, 'vote-policy'),
           id = userId(target)
         if (p?.state !== 'enabled') throw new UserError('管理员尚未开启投票处罚。')
@@ -295,7 +322,7 @@ export function installAutomation(host: Host, state: State) {
   cmd('赞成 <code:string>', '当前群每名成员只能投一票', '赞成').action(({ session }, code) =>
     guard(async () => {
       const s = session!
-      if (!inScope(s)) throw new UserError('此群尚未开放群管理。')
+      if (!(await inScope(s))) throw new UserError('此群尚未开放群管理。')
       if ((await policy(s, 'vote-policy'))?.state !== 'enabled') throw new UserError('投票处罚已关闭。')
       await call(() => internal(s.bot).getGroupMemberInfo(s.guildId!, s.userId!, true))
       const result = await state.edit(
@@ -320,7 +347,7 @@ export function installAutomation(host: Host, state: State) {
   cmd('投票列表', '查看当前群的投票', '投票列表').action(({ session }) =>
     guard(async () => {
       const s = session!
-      if (!inScope(s)) throw new UserError('此群尚未开放群管理。')
+      if (!(await inScope(s))) throw new UserError('此群尚未开放群管理。')
       const rows = (await state.list(botKey(s.bot), s.guildId!, 'vote')).slice(0, 20)
       return plain(
         rows
@@ -361,7 +388,7 @@ export function installAutomation(host: Host, state: State) {
   cmd('验证 <code:string>', '提交自己的入群验证码', '验证').action(({ session }, code) =>
     guard(async () => {
       const s = session!
-      if (!inScope(s)) throw new UserError('当前会话没有入群验证。')
+      if (!(await inScope(s))) throw new UserError('当前会话没有入群验证。')
       const ok = await state.edit(state.id(botKey(s.bot), s.guildId!, 'verify', s.userId!), (row) => {
         if (row.state !== 'verifying' || row.due <= Date.now())
           throw new UserError('验证已过期、结束或已开始处理。')
@@ -470,7 +497,11 @@ export function installAutomation(host: Host, state: State) {
         return
       decision = true
     } else {
-      if (!config.moderation || !config.managedGroups.includes(row.guildId)) return
+      if (
+        !config.moderation ||
+        (config.managedGroups.length > 0 && !config.managedGroups.includes(row.guildId))
+      )
+        return
       const p = await state.get(row.bot, row.guildId, 'review-policy')
       if (p?.state !== 'enabled') return
       actor = p.actor
@@ -513,7 +544,7 @@ export function installAutomation(host: Host, state: State) {
     }
   }
   async function joining(s: Session) {
-    if (!inScope(s)) return
+    if (!(await inScope(s))) return
     const p = await policy(s, 'verify-policy')
     if (p?.state !== 'enabled') return
     try {
@@ -565,7 +596,7 @@ export function installAutomation(host: Host, state: State) {
   ctx.on('guild-member-added', (s) => events(() => joining(s)))
   ctx.on('guild-member-deleted' as 'guild-member-added', (s) =>
     events(async () => {
-      if (!inScope(s)) return
+      if (!(await inScope(s))) return
       await state.edit(state.id(botKey(s.bot), s.guildId!, 'verify', s.userId!), (row) => {
         if (['verifying', 'pending'].includes(row.state)) row.state = 'cancelled'
       })
@@ -578,7 +609,7 @@ export function installAutomation(host: Host, state: State) {
   )
 
   ctx.middleware(async (s, next) => {
-    if (!inScope(s) || !s.messageId) return next()
+    if (!(await inScope(s)) || !s.messageId) return next()
     try {
       const bot = botKey(s.bot),
         guild = s.guildId!,
@@ -669,7 +700,7 @@ export function installAutomation(host: Host, state: State) {
           r.state === 'enabled' &&
           (r.payload.mode === 'exact' ? r.ref === content.trim() : content.includes(r.ref)),
       )
-      if (words.length && !(await exempt(state, bot, guild, user))) {
+      if (words.length && !(await host.lists.exempt(bot, guild, user))) {
         const strongest = words.sort((a, b) => b.payload.mute - a.payload.mute)[0]
         try {
           await allowedTarget(s.bot, guild, strongest.actor, user)
@@ -716,7 +747,8 @@ export function installAutomation(host: Host, state: State) {
   }, true)
   ctx.on('message-deleted', (s) =>
     events(async () => {
-      if (!scope(host, s) || !s.messageId) return
+      if (!scope(host, s) || !s.messageId || (await host.lists.ignored(botKey(s.bot), s.guildId, s.userId)))
+        return
       const route = await policy(s, 'route')
       if (
         route?.state !== 'enabled' ||
@@ -742,24 +774,22 @@ export function installAutomation(host: Host, state: State) {
   let busy = false
   async function execute(bot: Bot, row: DataRow) {
     if (row.kind === 'verify') {
-      const p = await state.get(row.bot, row.guildId, 'verify-policy')
+      const p =
+        (await state.get(row.bot, row.guildId, 'verify-policy')) ??
+        defaultPolicy(row.bot, row.guildId, 'verify-policy', bot.selfId)
       if (p?.state !== 'enabled') throw new UserError('入群验证已关闭。')
       await allowedTarget(bot, row.guildId, row.actor, row.ref)
       if (row.payload.kick && p.payload.kick)
         await call(() => bot.kickGuildMember(row.guildId, row.ref, false))
       else {
-        for (const channel of config.reviewGroups)
-          await store.enqueueEvent(
-            row.bot,
-            channel,
-            key(row.id, String(row.updated), 'timeout'),
-            `入群验证超时：群 ${row.guildId}，成员 ${row.ref}。未执行踢出。`,
-          )
+        await host.notifyVerification(bot, row.guildId, row.ref, key(row.id, String(row.updated), 'timeout'))
       }
       return
     }
     if (row.kind === 'vote') {
-      const p = await state.get(row.bot, row.guildId, 'vote-policy')
+      const p =
+        (await state.get(row.bot, row.guildId, 'vote-policy')) ??
+        defaultPolicy(row.bot, row.guildId, 'vote-policy', bot.selfId)
       if (p?.state !== 'enabled') throw new UserError('投票处罚已关闭。')
       await allowedTarget(bot, row.guildId, row.actor, row.payload.target)
     } else {
@@ -767,10 +797,16 @@ export function installAutomation(host: Host, state: State) {
       if (
         row.payload.target &&
         row.payload.action === 'mute' &&
-        (await exempt(state, row.bot, row.guildId, row.payload.target))
+        (await host.lists.exempt(row.bot, row.guildId, row.payload.target))
       )
         throw new UserError('目标在处罚豁免名单。')
     }
+    if (
+      !row.payload.target &&
+      row.payload.action === 'mute' &&
+      (await host.lists.groupExempt(row.bot, row.guildId))
+    )
+      throw new UserError('该群在处罚豁免白名单中。')
     if (row.payload.action === 'kick')
       await call(() => bot.kickGuildMember(row.guildId, row.payload.target, false))
     else if (row.payload.target)
@@ -821,7 +857,10 @@ export function installAutomation(host: Host, state: State) {
         const row = await state.claim(task.id, config.apiTimeout * 3 + 30_000)
         if (!row) continue
         try {
-          if (!config.moderation || !config.managedGroups.includes(row.guildId))
+          if (
+            !config.moderation ||
+            (config.managedGroups.length > 0 && !config.managedGroups.includes(row.guildId))
+          )
             throw new UserError('当前群已移出管理范围。')
           await execute(bot, row)
           await state.finish(row.id, row.claim, 'acknowledged', '平台操作已确认，或提醒已入队。')

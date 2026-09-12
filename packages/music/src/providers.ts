@@ -1,5 +1,6 @@
 import { PublicError, json, request, checkedUrl, RequestOptions } from './net'
 import JSON5 from 'json5'
+import { neteaseRequest } from './netease'
 
 export type Platform = 'netease' | 'qq' | 'kugou' | 'kuwo'
 export type Quality = 'standard' | 'high' | 'lossless'
@@ -22,11 +23,8 @@ export interface Play {
 export interface ProviderConfig {
   timeout: number
   proxy: string
-  qqCookie: string
   neteaseApi: string
-  neteaseCookie: string
   kugouApi: string
-  kugouCookie: string
 }
 export const titles: Record<Platform, string> = {
   netease: '网易云',
@@ -90,7 +88,10 @@ function validId(id: string) {
 }
 
 export class Providers {
-  constructor(readonly config: ProviderConfig) {}
+  constructor(
+    readonly config: ProviderConfig,
+    readonly cookie: (source: Platform) => Promise<string> = async () => '',
+  ) {}
   options(hosts: string[], signal?: AbortSignal, headers?: Record<string, string>): RequestOptions {
     return { hosts, timeout: this.config.timeout, proxy: this.config.proxy, signal, headers }
   }
@@ -128,7 +129,7 @@ export class Providers {
             this.config.neteaseApi,
             '/search',
             { keywords: keyword, limit: String(limit), type: '1' },
-            this.config.neteaseCookie,
+            await this.cookie('netease'),
             signal,
           )
         : await json(
@@ -162,7 +163,7 @@ export class Providers {
         const data = await json('https://u.y.qq.com/cgi-bin/musicu.fcg', {
           ...this.options(['u.y.qq.com'], signal, {
             Referer: 'https://y.qq.com/',
-            Cookie: this.config.qqCookie,
+            Cookie: await this.cookie('qq'),
             'Content-Type': 'application/json',
           }),
           method: 'POST',
@@ -177,7 +178,7 @@ export class Providers {
           `https://c.y.qq.com/soso/fcgi-bin/client_search_cp?${new URLSearchParams({ w: keyword, n: String(limit), p: '1', format: 'json' })}`,
           this.options(['c.y.qq.com'], signal, {
             Referer: 'https://y.qq.com/',
-            Cookie: this.config.qqCookie,
+            Cookie: await this.cookie('qq'),
           }),
         )
         songs = list(data.data?.song?.list)
@@ -207,7 +208,7 @@ export class Providers {
             this.config.kugouApi,
             '/search',
             { keywords: keyword, pagesize: String(limit) },
-            this.config.kugouCookie,
+            await this.cookie('kugou'),
             signal,
           )
         : await json(
@@ -267,16 +268,30 @@ export class Providers {
           this.config.neteaseApi,
           '/song/url/v1',
           { id, level: { standard: 'standard', high: 'exhigh', lossless: 'lossless' }[level] },
-          this.config.neteaseCookie,
+          await this.cookie('netease'),
           signal,
         )
         const song = list(data.data)[0]
         url = address(song?.url)
         mime = song?.type === 'flac' ? 'audio/flac' : 'audio/mpeg'
         actual = Number(song?.br) ? `${Math.round(song.br / 1000)}kbps` : '音源返回音质'
+      } else if (await this.cookie('netease')) {
+        const result = await neteaseRequest(
+          '/api/song/enhance/player/url/v1',
+          {
+            ids: JSON.stringify([id]),
+            level: { standard: 'standard', high: 'exhigh', lossless: 'lossless' }[level],
+            encodeType: 'aac',
+          },
+          { ...this.config, signal, cookie: await this.cookie('netease') },
+        )
+        const song = list(result.data.data)[0]
+        url = address(song?.url)
+        mime = song?.type === 'flac' ? 'audio/flac' : 'audio/mpeg'
+        actual = Number(song?.br) ? `${Math.round(song.br / 1000)}kbps` : '音源返回音质'
       } else {
         if (level !== 'standard')
-          throw new PublicError('网易云高音质需要配置可用的网易云 API 和有权限的账号。')
+          throw new PublicError('请先私聊机器人扫码登录网易云，再请求账号权限内的高音质。')
         url = `https://music.163.com/song/media/outer/url?id=${id}.mp3`
       }
     } else if (track.platform === 'qq') {
@@ -302,7 +317,7 @@ export class Providers {
       const data = await json('https://u.y.qq.com/cgi-bin/musicu.fcg', {
         ...this.options(['u.y.qq.com'], signal, {
           Referer: 'https://y.qq.com/',
-          Cookie: this.config.qqCookie,
+          Cookie: await this.cookie('qq'),
           'Content-Type': 'application/json',
         }),
         method: 'POST',
@@ -319,7 +334,7 @@ export class Providers {
           this.config.kugouApi,
           '/song/url',
           { hash: id, quality: { standard: '128', high: '320', lossless: 'flac' }[level] },
-          this.config.kugouCookie,
+          await this.cookie('kugou'),
           signal,
         )
         const urls = data.url ?? data.data?.url
@@ -350,7 +365,7 @@ export class Providers {
     let lyrics = ''
     if (track.platform === 'netease') {
       const data = this.config.neteaseApi
-        ? await this.gateway(this.config.neteaseApi, '/lyric', { id }, this.config.neteaseCookie, signal)
+        ? await this.gateway(this.config.neteaseApi, '/lyric', { id }, await this.cookie('netease'), signal)
         : await json(
             `https://music.163.com/api/song/lyric?id=${id}&lv=1&kv=1&tv=-1`,
             this.options(['music.163.com'], signal),
@@ -359,7 +374,10 @@ export class Providers {
     } else if (track.platform === 'qq') {
       const data = await json(
         `https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=${id}&format=json&nobase64=1`,
-        this.options(['c.y.qq.com'], signal, { Referer: 'https://y.qq.com/', Cookie: this.config.qqCookie }),
+        this.options(['c.y.qq.com'], signal, {
+          Referer: 'https://y.qq.com/',
+          Cookie: await this.cookie('qq'),
+        }),
       )
       lyrics = typeof data.lyric === 'string' ? data.lyric : ''
     } else if (track.platform === 'kuwo') {

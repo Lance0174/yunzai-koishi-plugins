@@ -1,84 +1,47 @@
-# Ember Koishi 插件套件
+# Yunzai → Koishi 功能迁移插件 · 0.3.0
 
-三个独立的 Koishi 4 插件，当前版本 **0.2.0**，目标环境为 Koishi 4.18.11、官方 OneBot v11 适配器和 SnowLuma。每个插件可以单独安装。
+感谢 [小飞 / xfdown](https://gitee.com/xfdown/xiaofei-plugin)、[R-plugin / kyrzy0416](https://gitee.com/kyrzy0416/rconsole-plugin)、[椰奶 / yeyang52](https://github.com/yeyang52/yenai-plugin)、[GroupEntry / A1Panda](https://github.com/A1Panda/GroupEntry_Plugin) 及各项目贡献者提供的原功能设计。这里是面向 Koishi 4.18.11、OneBot v11 / SnowLuma 的迁移实现。每个安装包均附作者、原仓库和许可证说明，Koishi 控制台也显示来源。
 
-| 插件 | npm 包名 | 当前内容 |
+| 独立插件 | 包名 | 默认行为 |
 | --- | --- | --- |
-| [群管理](packages/group-manager/README.md) | `koishi-plugin-ember-group-manager` | 群审核、日常群管、公告精华、定时任务、规则、投票与入群验证 |
-| [点歌](packages/music/README.md) | `koishi-plugin-ember-music-request` | 网易云、QQ音乐、酷狗、酷我搜索、选曲、歌词、音乐卡片/语音 |
-| [视频解析](packages/video/README.md) | `koishi-plugin-ember-video-parser` | 仅 B站、抖音、小红书；默认直接识别链接/分享卡片、视频发送、预览和取消 |
+| [群管理](packages/group-manager/README.md) | koishi-plugin-yunzai-group-manager | 所有群可用，黑名单忽略、白名单豁免；独立事件监听默认私聊管理员，通知用指令开关 |
+| [点歌](packages/music/README.md) | koishi-plugin-yunzai-music-request | 搜索后直接发送第一首，可选择卡片/语音；不开放 Cookie 输入；网易云私聊扫码 |
+| [视频解析](packages/video/README.md) | koishi-plugin-yunzai-video-parser | 三站裸链接/卡片自动识别，检查 ffmpeg/ffprobe，默认合并消息 |
 
-0.2.0 针对实际使用流程整改：日常禁言/踢人/全员禁言直接执行，新增常用短指令；视频默认无前缀自动解析；点歌支持数字选曲，只提供卡片/语音，不再提供下载命令。本版本提供源码和三个可独立安装的包，尚未推送或发布。
+0.3.0 去除了旧 Ember 用户名称前缀。升级必须同时替换 npm 依赖和 Koishi 插件键；不要同时启用新旧包。数据库表仍保留旧内部标识以读取 0.2.0 的审核、名单、任务与审计记录。
 
-## 安装
+## 安装与升级
 
-Node.js 最低 18.20。
-
-先把需要的 `.tgz` 文件上传到 Koishi 当前运行环境的项目目录。当前终端显示 `/koishi`，以下以视频包已经放在该目录为例。Docker 容器内的路径与宿主机不同；仅上传到宿主机还不够，文件要在容器内可见。
-
-先确认文件存在：
+将三个 tgz 和 `升级迁移.cjs` 放入 **Koishi 容器的 /koishi 目录**。先按视频 README 安装 ffmpeg（同时包含 ffprobe）。已安装旧版本的 Yarn 项目执行：
 
 ```sh
 cd /koishi
-ls -lh ./koishi-plugin-ember-video-parser-0.2.0.tgz
+node ./升级迁移.cjs --write
+yarn install
 ```
 
-只有上一步成功列出文件，再执行：
+脚本只在本地修改 package.json 与 koishi.yml / koishi.yaml / koishi.json，先验证新安装包存在，再创建权限受限的备份。它替换包名及插件键、移除旧音乐 Cookie 和 managedGroups 字段；如果仍有缺失的图床插件 file 依赖，会替换为已发布的 0.1.2。保留 Koishi 4.18.11、auto-mas 和其它插件版本。`auto-mas@0.0.2` 的精确 peer 版本警告仍可能存在；安装过程统一使用 Yarn。
+
+新安装时：
 
 ```sh
-npm install ./koishi-plugin-ember-video-parser-0.2.0.tgz
+cd /koishi
+yarn add ./koishi-plugin-yunzai-group-manager-0.3.0.tgz ./koishi-plugin-yunzai-music-request-0.3.0.tgz ./koishi-plugin-yunzai-video-parser-0.3.0.tgz
 ```
 
-原本使用 Yarn 的项目改用 `yarn add file:./koishi-plugin-ember-video-parser-0.2.0.tgz`。另外两个包同样先放入项目目录，再按需安装 `./koishi-plugin-ember-group-manager-0.2.0.tgz` 或 `./koishi-plugin-ember-music-request-0.2.0.tgz`。
+成功后重启 Koishi。群管理需要 database 服务；`reviewers` 填写管理员 QQ 以接收默认事件监听。点歌无需数据库，扫码权限通过 `loginAdmins` 或 Koishi 权限等级 4 及以上授予。源码中的升级脚本是 `scripts/upgrade.cjs`，交付包内提供中文文件名副本。
 
-安装后重启 Koishi 并启用插件。旧示例的 `/path/` 是占位目录；`ENOENT` 表示指定路径下没有文件，伴随的 tarball corrupted 提示不能证明安装包损坏。当前版本尚未发布到 npm/市场。
+完整参数和指令见各插件 README。[来源和许可](THIRD_PARTY_NOTICES.md)、[原逻辑对照](docs/MIGRATION-REVIEW.md)、[开发报告](DEVELOPMENT.md)。
 
-从 0.1.0 升级时，把旧视频配置的 `autoParse: false` 改成 `true`。重启 Koishi，在插件配置中启用对应插件。群管理需要已有 `database` 服务；视频处理需要服务器上的 `ffmpeg` 和 `ffprobe`。只启用点歌时无需数据库和 ffmpeg。
+## 开发与验证
 
-最少配置：
-
-```yaml
-plugins:
-  ember-group-manager:
-    reviewers: ['你的审核 QQ']
-    reviewGroups: ['接收审核通知的群号']
-    managedGroups: ['允许群管的群号']
-  ember-music-request: {}
-  ember-video-parser:
-    autoParse: true
-    ffmpeg: ffmpeg
-    ffprobe: ffprobe
-```
-
-上面仅展示新增项，请合并到已有配置，不要覆盖现有 `plugins`。图床插件和历史 Telegram 凭据与这三个插件无依赖关系。
-
-## 验证范围
-
-本地自动验证使用 Koishi 4.18.11、OneBot 适配器 6.9.4、SQLite 驱动 4.7.0 和 Node 24.16.0。覆盖真实 SQLite 的并发/重启、官方适配器 WebSocket 协议、真实 ffmpeg/ffprobe、下载限制、取消与三个 tarball 独立安装。
-
-公开服务实测：四个平台搜索和歌词有成功样本；网易云、酷我下载音频成功；QQ音乐、酷狗当前测试歌曲没有返回可用音源。B站真实视频完成下载、合流和 ffprobe 检查。抖音、小红书当前通过受控响应样本，仍需真实分享链接与用户环境验收。
-
-**没有连接用户的 SnowLuma 服务器或发送真实 QQ 消息。** 模拟协议成功不能代替实际音频、视频播放和群管效果。完整证据、错误与修复见 [开发报告](DEVELOPMENT.md)。
-
-## 开发
+Node.js 最低 18.20；开发验证宿主为 Koishi 4.18.11。
 
 ```sh
 npm ci
 npm test
 npm run pack:all
-```
-
-测试机器需要 ffmpeg/ffprobe，可用 `FFMPEG`、`FFPROBE` 环境变量指定路径。安装包和 SHA256SUMS 输出到 `artifacts/packages/`。
-
-```sh
-# 三个包分别装入独立的 Koishi 4.18.11 项目并检查命令注册
 npm run test:packages
-
-# 可选的只读公开接口检查；不向 QQ 发消息
-node scripts/live-probe.cjs
-node scripts/live-video.cjs
 ```
 
-上述实时检查可临时设置 `PROBE_PROXY`；代理、Cookie 不写入源码或证据文件。网络变化、登录权限和地区限制会影响结果。
-
-尚未实现的范围包括周期自动退群、反禁言/退群拉黑、幸运字符/星级/网页统计、音乐推荐/云盘和视频评论卡片。参考仓库及独立实现边界见 [来源说明](THIRD_PARTY_NOTICES.md)。
+媒体测试需要 PATH 中的 ffmpeg/ffprobe，也可设置 FFMPEG、FFPROBE。三个真实安装包分别安装到独立 Koishi 项目验收；报告区分本地协议、公开接口与真实 QQ 的验证范围。此次不自动连接用户服务器或发布 npm。

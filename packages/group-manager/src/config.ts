@@ -20,6 +20,13 @@ export interface Config {
   shortcuts: boolean
   autoInvite: boolean
   avatarHosts: string[]
+  blackUsers: string[]
+  whiteUsers: string[]
+  blackGroups: string[]
+  whiteGroups: string[]
+  listener: boolean
+  listenerMode: 'admins' | 'custom'
+  listenerTargets: { type: 'group' | 'private'; id: string }[]
 }
 export const Config: Schema<Config> = Schema.object({
   shortcuts: Schema.boolean().default(true).description('启用禁言、踢人、群公告等短指令。'),
@@ -32,12 +39,37 @@ export const Config: Schema<Config> = Schema.object({
   botIds: Schema.array(String)
     .default([])
     .description('限定机器人 QQ；留空适用所有 OneBot 账户，各账户数据独立。'),
-  reviewers: Schema.array(String).default([]).description('允许审核的用户 QQ。'),
+  reviewers: Schema.array(String)
+    .default([])
+    .description('机器人管理员 QQ：允许审核，也是事件监听的默认私聊收件人。'),
   reviewGroups: Schema.array(String).default([]).description('接收通知及允许审批的群号。'),
   managedGroups: Schema.array(String)
     .default([])
-    .description('允许群管操作及发送事件通知的群号；留空不开放群管。'),
-  privateReview: Schema.boolean().default(false).description('允许审核人私聊使用请求编号审批。'),
+    .description('兼容旧配置的群管范围；留空默认所有群可用。新配置推荐使用黑白名单。')
+    .hidden(),
+  blackUsers: Schema.array(String)
+    .default([])
+    .description('全局用户黑名单：忽略消息，不自动踢人。可用指令维护。'),
+  whiteUsers: Schema.array(String)
+    .default([])
+    .description('全局用户白名单：豁免处罚和入群验证，不授予管理权限。'),
+  blackGroups: Schema.array(String).default([]).description('群黑名单：忽略这些群的消息。'),
+  whiteGroups: Schema.array(String)
+    .default([])
+    .description('群白名单：豁免本插件的处罚和入群验证。黑名单优先。'),
+  listener: Schema.boolean().default(true).description('独立事件监听：默认开启，不依赖群管和请求审核开关。'),
+  listenerMode: Schema.union(['admins', 'custom'])
+    .default('admins')
+    .description('监听收件方式：admins 私聊管理员；custom 使用下方自定义目标。'),
+  listenerTargets: Schema.array(
+    Schema.object({
+      type: Schema.union(['group', 'private']).default('group'),
+      id: Schema.string().required().description('群号或私聊 QQ。'),
+    }),
+  )
+    .default([])
+    .description('自定义事件监听目标，可同时设置群聊和私聊。'),
+  privateReview: Schema.boolean().default(true).description('允许审核人私聊使用请求编号审批。'),
   inviteAllow: Schema.array(String)
     .default([])
     .description('机器人允许加入的群；留空不限。可选开启自动接受白名单内的邀请。'),

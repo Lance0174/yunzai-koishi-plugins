@@ -1,48 +1,57 @@
-# Ember 点歌 0.2.0
+# Yunzai 点歌迁移 · Koishi 0.3.0
 
-Koishi 4 插件，支持网易云、QQ音乐、酷狗、酷我。无需群管理或视频解析插件。
+功能来源：[xiaofei-plugin](https://gitee.com/xfdown/xiaofei-plugin)（xfdown / 小飞及贡献者）、[rconsole-plugin](https://gitee.com/kyrzy0416/rconsole-plugin)（kyrzy0416 及 R-plugin 贡献者）。网易云扫码协议参考 NeteaseCloudMusicApi / Binaryify 及贡献者（MIT）。感谢原作者；这是 Koishi 迁移实现，完整作者与许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-## 指令
+包名 `koishi-plugin-yunzai-music-request`，插件键 `yunzai-music-request`。适用于 Koishi 4.18.11 和 OneBot v11，无需群管插件、数据库或 ffmpeg。
+
+## 默认直接发送第一首
 
 ```text
-点歌 晴天 -p 网易云
+点歌 晴天
 点歌 晴天 -p QQ
+点歌 晴天 --语音
+点歌 晴天 --卡片
+点歌 搜索 晴天
+点歌 晴天 --列表
 点歌 列表
 点歌 下一页
 点歌 上一页
-点歌 播放 1
-点歌 卡片 1
-点歌 语音 1
-点歌 语音 1 -q high
-点歌 歌词 1
+点歌 卡片 2
+点歌 语音 2
+点歌 歌词 2
 点歌 取消
 ```
 
-默认网易云，每页 5 首，一次最多 4 页。列表序号是本次搜索中的全局序号，翻页后仍保持编号。选曲会话按平台、Bot、群、频道和用户隔离，默认 10 分钟过期。
+普通点歌搜索后直接发送第一首，默认音乐卡片；配置 `output: voice` 可改为语音。`点歌 搜索` 或 `--列表` 才显示选曲列表，查看列表后可以回复序号选歌。直接点播后不会把无关数字聊天当成选歌。
 
-选曲后默认发送音乐卡片，也可直接回复列表中的序号。`点歌 卡片 1` 和 `点歌 语音 1` 明确指定方式；`点歌 播放 1 --卡片` / `--语音` 可以覆盖默认。配置 `output: voice` 可将默认方式改为语音。
+默认网易云，另有 QQ音乐、酷狗、酷我；每页 5 首，最多 4 页，会话默认 10 分钟，按用户、机器人、群和私聊隔离。没有下载命令或上传群文件操作。网易云、具有数值歌曲 ID 的 QQ音乐使用原生音乐卡片；酷狗、酷我使用自定义音乐卡片，需要可播放音源。语音通过 OneBot record 发送。
 
-网易云和有数值歌曲 ID 的 QQ音乐使用原生音乐卡片，发送时无需下载音源；酷狗、酷我等使用自定义音乐卡片，需要可用音源。语音通过 OneBot `record` 段发送，受账号播放权限和大小限制。已移除下载指令，不再上传音乐文件到群文件。
+## 扫码登录
 
-## 音源配置
+设置页不提供 QQ、网易云或酷狗 Cookie 输入，也不接受聊天粘贴 Cookie。网易云可直接扫码，不需要另行搭建 API：
 
-| 平台 | 默认方式 | 可选账号/服务 |
-| --- | --- | --- |
-| 网易云 | 公开搜索、歌词、外链音源 | `neteaseApi`、`neteaseCookie` |
-| QQ音乐 | QQ搜索、vkey、歌词 | `qqCookie` |
-| 酷狗 | msearch 搜索、公开 playInfo、歌词 | `kugouApi`、`kugouCookie` |
-| 酷我 | search.kuwo.cn 搜索、标准音源、歌词 | 当前不支持账号音源配置 |
+```text
+点歌 登录 网易云
+点歌 账号
+点歌 退出登录 网易云
+```
 
-可选网易云 API 须实现 POST 表单 `/search`（keywords/limit/type）、`/song/url/v1`（id/level）、`/lyric`（id）；响应遵循常用网易云 API 的 `result.songs`、`data[].url`、`lrc.lyric` 格式。酷狗 API 须实现 POST `/search`（keywords/pagesize）和 `/song/url`（hash/quality），分别返回 `data.info` 或 `data.lists`、`url` 或 `data.url`。Cookie 通过 POST 表单传给管理员明确配置的 API 服务，不放进 URL。
+以上账号指令仅在私聊可用，调用者须在 `loginAdmins` 中，或拥有 Koishi 权限等级 4 及以上。机器人发送二维码，使用网易云 App 扫描并确认；轮询每 2.5 秒一次，3 分钟过期。取消/退出登录会中止轮询，迟到的响应不会重新绑定账号。
 
-`standard` / `标准`、`high` / `高`、`lossless` / `无损` 用于请求音源允许的音质。网易云和酷狗高音质需要配置兼容 API 和具有相应权限的账号；QQ音乐依赖上游返回权限；酷我首版仅标准音质。请求音质不等于取得会员权限，缺少音源时明确报错。
+账号用于当前机器人，按平台和机器人 ID 隔离。登录结果写入 Koishi 数据目录 `data/yunzai-music-request/accounts.json`，新建文件权限为 0600；不回显登录凭据，不写入插件配置或日志。状态指令显示是否保存了登录态，不能保证源站会话永不过期。退出登录会移除本地账号。
 
-2026-09-12 无登录态实测：四个平台均有搜索/歌词成功样本；网易云、酷我下载成功；QQ音乐、酷狗测试歌曲未提供可用音源。自建 API、高/无损及真实 QQ 播放尚未验收。此状态不代表其他歌曲、账号或地区的可用性。
+当前扫码支持网易云。QQ音乐、酷狗、酷我使用匿名点歌。可播放歌曲和音质仍由平台及账号权限决定。
 
-## 资源限制
+## 可选配置
 
-默认单音频 25MB、并发 2、同用户间隔 1500ms，支持取消和卸载中止网络读取。`timeout` 默认 20 秒，`proxy` 可配置 HTTP 代理。API、Cookie、代理在 Koishi 控制台配置；Cookie/代理字段按 secret 显示。
+- `output`：card / voice，默认 card。
+- `defaultPlatform`：netease / qq / kugou / kuwo。
+- `loginAdmins`：允许管理音乐账号的 QQ 列表。
+- `neteaseApi`：可选兼容 API，需支持 `/search`、`/song/url/v1`、`/lyric`；扫码还需 `/login/qr/key` 和 `/login/qr/check`。留空直接访问网易云。变更 API 地址后需要重新扫码，旧登录态不会转交给新服务。
+- `kugouApi`：可选搜索和音源 API，当前不接收账号 Cookie。
+- `maxAudioMB` / `maxConcurrent` / `cooldown`：默认 25MB / 2 / 1500ms。
+- `timeout` / `proxy`：默认 20 秒；可选 HTTP 代理。
 
-下载逐跳检查平台域名、DNS/IP 和大小；Cookie/Authorization 不跨来源跳转。管理员配置的 API 地址可指向自己的内网服务，该例外不会用于媒体地址。发送失败或超时不自动重复投递。
+`-q standard/标准`、`high/高`、`lossless/无损` 选择请求音质，适用于语音；音源权限不足会明确失败。账号登录不改变版权或会员权限。取消、超时和卸载会中止网络任务。
 
-当前不含每日推荐、私人电台、收藏和云盘。
+0.3.0 验证包含真实网易云扫码标识获取，以及本地完整扫码状态、确认、账号保存、退出、过期和迟到响应测试；没有替用户登录真实账号或发送真实 QQ 消息。

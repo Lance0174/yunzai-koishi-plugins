@@ -287,10 +287,11 @@ const join = (user) =>
     user_id: user,
     operator_id: 1001,
   })
-test('entry verification is opt-in, accepts only the user-bound code and deduplicates joins', async () => {
+test('entry verification defaults to a non-kicking challenge, binds codes to users and deduplicates joins', async () => {
   join(2700)
-  await quiet()
-  assert.equal(await row('verify', '2700'), undefined)
+  await waitFor(async () => (await row('verify', '2700'))?.state === 'verifying')
+  assert.equal((await row('verify', '2700')).payload.kick, false)
+  await command('验证通过 2700')
   await command('入群验证 开 --踢出')
   join(2701)
   join(2701)
@@ -405,7 +406,7 @@ test('group list, leave, broadcasts, honor, sign-ins and historical request impo
   assert.match((await command('机器人退群 700')).text, /当前群号/)
   await command('机器人退群 600')
   assert.equal(last('set_group_leave').is_dismiss, false)
-  assert.match((await command('发通知 700 hello')).text, /管理群/)
+  assert.match((await command('发通知 700 hello')).text, /可管理的群/)
   await command('发通知 600 test-broadcast')
   assert.ok(wire.sent.some((s) => s.text === 'test-broadcast'))
   wire.responses.set('get_group_system_msg', {

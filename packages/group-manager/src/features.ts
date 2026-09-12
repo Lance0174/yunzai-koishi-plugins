@@ -18,7 +18,6 @@ import { installAutomation } from './automation'
 
 export function installFeatures(host: Host) {
   const { ctx, config, permission, perform, guard, botKey } = host
-  stateModel(ctx)
   const state = new State(host.store),
     cmd = commandFor(host)
   const api = (s: Session) => internal(s.bot)
@@ -92,13 +91,13 @@ export function installFeatures(host: Host) {
         return perform(s, 'title', id, () => api(s).setGroupSpecialTitle(s.guildId!, id, value, -1))
       }),
     )
-  cmd('头衔申请 <title:text>', '申请自己的群头衔（管理员开启后可用）', '申请头衔').action(
+  cmd('头衔申请 <title:text>', '申请自己的群头衔（默认开启，要求机器人为群主）', '申请头衔').action(
     ({ session }, title) =>
       guard(async () => {
         const s = session!
         if (!scope(host, s)) throw new UserError('此群尚未开放群管理。')
         const policy = await state.get(botKey(s.bot), s.guildId!, 'titles')
-        if (policy?.state !== 'enabled') throw new UserError('此群尚未开启头衔申请。')
+        if (policy?.state === 'disabled') throw new UserError('此群尚未开启头衔申请。')
         const value = bounded(title, '头衔', 18)
         const words = await state.list(botKey(s.bot), s.guildId!, 'word')
         if (
@@ -108,7 +107,7 @@ export function installFeatures(host: Host) {
           )
         )
           throw new UserError('头衔包含当前群屏蔽的词语。')
-        const roles = await host.authorize(s.bot, s.guildId!, policy.actor)
+        const roles = await host.authorize(s.bot, s.guildId!, policy?.actor ?? s.selfId)
         if (roles.self.role !== 'owner') throw new UserError('此操作要求机器人为群主。')
         await call(() => api(s).getGroupMemberInfo(s.guildId!, s.userId!, true))
         return perform(s, 'self-title', s.userId!, () =>
@@ -384,7 +383,7 @@ export function installFeatures(host: Host) {
       if (!config.reviewers.includes(s.userId!) || !host.active(s.bot)) await permission(s)
       const rows = await call(() => api(s).getGroupList(true))
       return page(
-        rows.filter((r) => config.managedGroups.includes(String(r.group_id))),
+        rows.filter((r) => !config.managedGroups.length || config.managedGroups.includes(String(r.group_id))),
         index,
         (r) => `${r.group_id} · ${r.group_name} (${r.member_count ?? '?'} 人)`,
       )
@@ -406,8 +405,15 @@ export function installFeatures(host: Host) {
           targets = [...new Set(groups.split(/[,，]/))],
           value = bounded(content, '通知', 2000)
         await permission(s)
-        if (!targets.length || targets.length > 10 || targets.some((g) => !config.managedGroups.includes(g)))
-          throw new UserError('通知目标须为已配置的管理群，一次最多 10 群。')
+        if (
+          !targets.length ||
+          targets.length > 10 ||
+          targets.some(
+            (g) =>
+              !/^\d{1,20}$/.test(g) || (config.managedGroups.length > 0 && !config.managedGroups.includes(g)),
+          )
+        )
+          throw new UserError('通知目标须为可管理的群号，一次最多 10 群。')
         const results: string[] = []
         for (const guild of targets) {
           results.push(
@@ -514,6 +520,8 @@ export function installFeatures(host: Host) {
         `规则：${config.command} 豁免 添加|删除|列表 [QQ] / 申请黑名单 添加|删除|列表 [QQ] / 违禁词 添加|删除|列表|预览 [词语] [--精确] [--禁言 10m]\n` +
         `入群：${config.command} 自动审核 开|关 [--答案 文本] [--等级 数字] / 入群验证 开|关 [--超时 10m] [--踢出] / 验证通过 @成员\n` +
         `投票：投票设置 开|关 [--票数 3] / 投票禁言 @成员 10m / 投票踢人 @成员 / 赞成 编号 / 投票列表 / 取消投票 编号\n` +
+        `监听：事件监听 开 --管理员 / 开 --群 群号 --私聊 QQ / 关 / 状态；事件通知 开|关 [事件类型] [--全局]\n` +
+        `名单：黑名单 添加|删除|列表 [QQ] [--全局] [--群] / 白名单 添加|删除|列表 [QQ] [--全局] [--群]\n` +
         `消息：发通知 群号,群号 正文 / ${config.command} 消息路由 开|关 [--目标 群号] [--转发] [--撤回] [--保留 30]\n` +
         `维护：群列表 / 机器人退群 当前群号 / 群荣誉 / 群打卡列表 / ${config.command} 请求列表|历史申请|补录申请|审计|诊断`,
     ),

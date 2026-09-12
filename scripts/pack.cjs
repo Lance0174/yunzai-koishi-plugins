@@ -20,9 +20,14 @@ for (const folder of ['group-manager', 'music', 'video']) {
   )
   if (
     !info.files.some((file) => file.path === 'lib/index.js') ||
-    !info.files.some((file) => file.path === 'README.md')
+    !info.files.some((file) => file.path === 'README.md') ||
+    !info.files.some((file) => file.path === 'THIRD_PARTY_NOTICES.md') ||
+    !info.files.some((file) => file.path.startsWith('licenses/'))
   )
     throw new Error('Package is incomplete: ' + folder)
+  const readme = fs.readFileSync(path.join(cwd, 'README.md'), 'utf8')
+  if (!readme.includes('功能来源：') || !readme.includes('THIRD_PARTY_NOTICES.md'))
+    throw new Error('Missing visible upstream attribution: ' + folder)
   if (info.files.some((file) => /(^|\/)(node_modules|test|src|\.env|artifacts)(\/|$)/.test(file.path)))
     throw new Error('Unexpected packaged file: ' + folder)
   const hash = createHash('sha256')

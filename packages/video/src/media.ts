@@ -133,6 +133,29 @@ export interface MediaConfig {
   ffprobe: string
   maxHeight: 360 | 480 | 720 | 1080
 }
+export async function checkTools(config: Pick<MediaConfig, 'ffmpeg' | 'ffprobe'>, timeout = 5000) {
+  const control = new AbortController()
+  const timer = setTimeout(() => control.abort(), timeout)
+  try {
+    const results = await Promise.allSettled(
+      (['ffmpeg', 'ffprobe'] as const).map(async (name) => {
+        const output = (await tool(config[name], ['-version'], control.signal, process.cwd())).toString()
+        if (!output.startsWith(`${name} version `)) throw new Error('Unexpected executable')
+        return output.split(/\r?\n/)[0].slice(0, 180)
+      }),
+    )
+    const missing = results.flatMap((result, i) =>
+      result.status === 'rejected' ? [i ? 'ffprobe' : 'ffmpeg'] : [],
+    )
+    if (missing.length)
+      throw new PublicError(
+        `视频依赖未就绪：${missing.join('、')}。请在 Koishi 所在容器内安装 ffmpeg（同时包含 ffprobe）：Alpine 使用 apk add --no-cache ffmpeg；Debian/Ubuntu 使用 apt-get update && apt-get install -y ffmpeg。安装后发送“视频解析 诊断”重新检查。`,
+      )
+    return results.map((result) => (result as PromiseFulfilledResult<string>).value)
+  } finally {
+    clearTimeout(timer)
+  }
+}
 export class Media {
   readonly root: string
   private cleaning?: Promise<void>
@@ -141,7 +164,7 @@ export class Media {
     readonly provider: VideoProviders,
     readonly config: MediaConfig,
   ) {
-    this.root = path.resolve(baseDir, 'data/ember-video-parser')
+    this.root = path.resolve(baseDir, 'data/yunzai-video-parser')
   }
   private own(file: string) {
     const value = path.resolve(file)

@@ -241,7 +241,7 @@ test('whole-group mute executes directly and quoted recalls cannot cross groups'
   assert.match((await wire.command(quote('80001'), 1001, 600)).text, /平台已确认/)
   assert.equal(wire.actions.findLast((a) => a.action === 'delete_msg').params.message_id, 80001)
 })
-test('event bursts are persisted and delivered despite destination rate limiting', async () => {
+test('event bursts are persisted and delivered to administrator private chat despite destination rate limiting', async () => {
   for (let user = 3000; user < 3003; user++)
     wire.emit({
       post_type: 'notice',
@@ -252,13 +252,15 @@ test('event bursts are persisted and delivered despite destination rate limiting
       operator_id: 1001,
     })
   await waitFor(
-    async () => (await app.database.get('ember_group_event', { state: 'sent' })).length >= 6,
+    async () =>
+      (await app.database.get('ember_group_event', { state: 'sent', topic: '成员变动' })).length >= 3,
     5000,
   )
-  for (const user of [3000, 3001, 3002]) assert.ok(wire.sent.some((n) => n.text.includes(`成员：${user}`)))
+  for (const user of [3000, 3001, 3002])
+    assert.ok(wire.sent.some((n) => n.action === 'send_private_msg' && n.text.includes(`用户：${user}`)))
 })
 test('song sessions isolate user/group; selection, paging and lyrics use real Koishi commands', async () => {
-  assert.match((await wire.command('点歌 测试')).text, /第 1\/3 页/)
+  assert.match((await wire.command('点歌 搜索 测试')).text, /第 1\/3 页/)
   assert.match((await wire.command('点歌 下一页')).text, /3\. 歌曲3/)
   assert.match((await wire.command('点歌 列表', 1002)).text, /会话已过期或不属于/)
   assert.match((await wire.command('点歌 播放 1', 1001, 501)).text, /会话已过期或不属于/)
@@ -300,6 +302,27 @@ test('QQ native cards use the numeric song id without fetching the audio source'
   assert.equal(String(card.id), '789')
   assert.equal(fixture.calls.length, from)
   assert.match((await wire.command('点歌 播放 1 --卡片 --语音')).text, /请选择/)
+})
+
+test('plain song requests immediately send the first result, while --列表 keeps manual selection', async () => {
+  const from = wire.sent.length
+  const first = await wire.command('点歌 测试', 1001, 500, (n) =>
+    n.params.message.some((s) => s.type === 'music'),
+  )
+  assert.equal(String(first.params.message.find((s) => s.type === 'music').data.id), '1')
+  assert.equal(
+    wire.sent.slice(from).some((n) => /第 \d+\//.test(n.text)),
+    false,
+  )
+  assert.match((await wire.command('点歌 测试 --列表')).text, /第 1\/3 页/)
+  const voice = await wire.command('点歌 测试 --语音', 1001, 500, (n) =>
+    n.params.message.some((s) => s.type === 'record'),
+  )
+  assert.ok(voice.params.message.find((s) => s.type === 'record').data.file.startsWith('base64://'))
+  assert.equal(
+    Object.keys(music.Config({})).some((key) => /cookie/i.test(key)),
+    false,
+  )
 })
 
 test('video command downloads, processes and emits an actual OneBot video segment', async () => {

@@ -1,14 +1,16 @@
 {
-  "name": "koishi-plugin-ember-music-request",
-  "version": "0.2.0",
-  "description": "Koishi 四平台点歌、选曲、歌词与音频发送。",
+  "name": "koishi-plugin-yunzai-music-request",
+  "version": "0.3.0",
+  "description": "参考小飞及 R-plugin 的 Koishi 四平台点歌迁移，默认首曲，支持网易云扫码。",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "files": [
     "lib",
     "README.md",
     "LICENSE",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md",
+    "licenses"
   ],
   "license": "MIT",
   "engines": {
@@ -17,7 +19,9 @@
   "keywords": [
     "koishi",
     "music",
-    "onebot"
+    "onebot",
+    "yunzai",
+    "migration"
   ],
   "peerDependencies": {
     "koishi": "^4.18.11"
@@ -32,12 +36,13 @@
   },
   "koishi": {
     "description": {
-      "zh": "QQ音乐、网易云、酷狗、酷我点歌；按用户隔离选曲会话。"
+      "zh": "参考小飞及 R-plugin 的 Koishi 四平台点歌迁移，默认首曲，支持网易云扫码。"
     }
   },
   "dependencies": {
     "https-proxy-agent": "^7.0.6",
     "ipaddr.js": "^2.5.0",
-    "json5": "^2.2.3"
+    "json5": "^2.2.3",
+    "qrcode": "^1.5.4"
   }
 }

@@ -56,6 +56,8 @@ export interface EventRow {
   id: string
   bot: string
   channel: string
+  guildId: string
+  topic: string
   summary: string
   count: number
   created: number
@@ -81,6 +83,8 @@ export function models(ctx: Context) {
       id: 'string(64)',
       bot: 'string(160)',
       channel: 'string(80)',
+      guildId: 'string(80)',
+      topic: 'string(30)',
       summary: 'text',
       count: 'unsigned',
       created: 'double',
@@ -348,7 +352,13 @@ export class Store {
     )
   }
 
-  async enqueueEvent(bot: string, channel: string, eventId: string, summary: string) {
+  async enqueueEvent(
+    bot: string,
+    channel: string,
+    eventId: string,
+    summary: string,
+    source = { guildId: '', topic: '' },
+  ) {
     return this.atomic(async (db) => {
       const id = key(bot, channel, eventId)
       if ((await db.get('ember_group_event', { id })).length) return
@@ -365,6 +375,7 @@ export class Store {
         id,
         bot,
         channel,
+        ...source,
         summary: summary.slice(0, 1000),
         count: 1,
         created: this.now(),

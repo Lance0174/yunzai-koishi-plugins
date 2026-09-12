@@ -1,3 +1,5 @@
 * text=auto eol=lf
 *.tgz binary
 *.zip binary
+# Preserve trailing spaces in the verbatim upstream Mulan license texts.
+packages/*/licenses/*-MulanPSL-2.0.txt whitespace=-blank-at-eol

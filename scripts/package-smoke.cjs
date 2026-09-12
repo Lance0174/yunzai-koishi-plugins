@@ -8,9 +8,9 @@ const { createHash } = require('node:crypto')
 const root = path.resolve(__dirname, '..')
 const version = require('../package.json').version
 const names = [
-  'koishi-plugin-ember-group-manager',
-  'koishi-plugin-ember-music-request',
-  'koishi-plugin-ember-video-parser',
+  'koishi-plugin-yunzai-group-manager',
+  'koishi-plugin-yunzai-music-request',
+  'koishi-plugin-yunzai-video-parser',
 ]
 
 async function child(directory, name) {
@@ -40,15 +40,39 @@ async function child(directory, name) {
             '群管理.撤回',
           ]
         : name === names[1]
-          ? ['点歌.播放', '点歌.卡片', '点歌.语音', '点歌.歌词', '点歌.取消']
-          : ['视频解析.预览', '视频解析.任务', '视频解析.取消']
+          ? [
+              '点歌.播放',
+              '点歌.卡片',
+              '点歌.语音',
+              '点歌.歌词',
+              '点歌.取消',
+              '点歌.登录',
+              '点歌.账号',
+              '点歌.退出登录',
+            ]
+          : ['视频解析.预览', '视频解析.任务', '视频解析.取消', '视频解析.诊断']
     for (let i = 0; i < 100 && !app.$commander.resolve(expected[0]); i++)
       await new Promise((resolve) => setTimeout(resolve, 10))
     expected.forEach((command) => assert.ok(app.$commander.resolve(command), command))
     assert.equal(app.$commander.resolve('群管理.执行'), undefined)
     assert.equal(app.$commander.resolve('点歌.下载'), undefined)
-    if (name === names[2]) assert.equal(plugin.Config({}).autoParse, true)
+    assert.ok(plugin.usage.includes('迁移来源：'))
+    const installed = path.dirname(requireAt.resolve(name + '/package.json'))
+    assert.ok((await fs.readFile(path.join(installed, 'THIRD_PARTY_NOTICES.md'), 'utf8')).includes('贡献者'))
+    assert.ok((await fs.readdir(path.join(installed, 'licenses'))).length > 0)
+    if (name === names[1])
+      assert.equal(
+        Object.keys(plugin.Config({})).some((key) => /cookie/i.test(key)),
+        false,
+      )
+    if (name === names[2]) {
+      assert.equal(plugin.Config({}).autoParse, true)
+      assert.equal(plugin.Config({}).forward, true)
+    }
     if (name === names[0]) {
+      for (const suffix of ['黑名单', '白名单', '事件监听', '事件通知'])
+        assert.ok(app.$commander.resolve('群管理.' + suffix))
+      assert.deepEqual(plugin.Config({}).managedGroups, [])
       const { Store } = requireAt(name + '/lib/store')
       const store = new Store(app.database)
       const row = await store.receive(

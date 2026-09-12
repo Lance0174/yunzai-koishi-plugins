@@ -1,14 +1,16 @@
 {
-  "name": "koishi-plugin-ember-group-manager",
-  "version": "0.2.0",
-  "description": "Koishi OneBot 群审核、日常群管、公告精华、定时任务、投票、违禁词与入群验证。",
+  "name": "koishi-plugin-yunzai-group-manager",
+  "version": "0.3.0",
+  "description": "参考椰奶及 GroupEntry 的 Koishi 群管与独立事件监听迁移。",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "files": [
     "lib",
     "README.md",
     "LICENSE",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md",
+    "licenses"
   ],
   "license": "MIT",
   "engines": {
@@ -18,7 +20,9 @@
     "koishi",
     "onebot",
     "group",
-    "snowluma"
+    "snowluma",
+    "yunzai",
+    "migration"
   ],
   "peerDependencies": {
     "koishi": "^4.18.11"
@@ -33,7 +37,7 @@
   },
   "koishi": {
     "description": {
-      "zh": "Koishi OneBot 群审核、日常群管、公告精华、定时任务、投票、违禁词与入群验证。"
+      "zh": "参考椰奶及 GroupEntry 的 Koishi 群管与独立事件监听迁移。"
     },
     "service": {
       "required": [

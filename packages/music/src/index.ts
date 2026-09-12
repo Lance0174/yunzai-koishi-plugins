@@ -10,10 +10,11 @@ import {
   mediaHosts,
 } from './providers'
 import { PublicError, request, mediaKind } from './net'
+import { Accounts } from './accounts'
 
-export const name = 'ember-music-request'
+export const name = 'yunzai-music-request'
 export const usage =
-  '示例：点歌 晴天 -p 网易云；点歌 播放 1；点歌 歌词 1。API 和 Cookie 为可选账号配置，不同平台的访问条件可能不同。'
+  '点歌 晴天：默认直接发送搜索结果第一首。点歌 搜索 晴天：显示列表。可选择卡片或语音。私聊“点歌 登录 网易云”扫码登录，无需填写 Cookie。\n\n迁移来源：[xiaofei-plugin / xfdown 及贡献者](https://gitee.com/xfdown/xiaofei-plugin)、[rconsole-plugin / kyrzy0416 及贡献者](https://gitee.com/kyrzy0416/rconsole-plugin)。网易云扫码协议参考 NeteaseCloudMusicApi / Binaryify 及贡献者（MIT）。详见安装包 THIRD_PARTY_NOTICES.md。'
 export interface Config extends ProviderConfig {
   command: string
   defaultPlatform: Platform
@@ -23,24 +24,25 @@ export interface Config extends ProviderConfig {
   maxConcurrent: number
   cooldown: number
   output: 'card' | 'voice'
+  loginAdmins: string[]
 }
 export const Config: Schema<Config> = Schema.object({
   command: Schema.string().default('点歌'),
   defaultPlatform: Schema.union(['netease', 'qq', 'kugou', 'kuwo']).default('netease'),
   output: Schema.union(['card', 'voice'])
     .default('card')
-    .description('选曲后的默认发送方式：音乐卡片或语音。'),
+    .description('点歌默认发送搜索结果第一首；选择音乐卡片或语音。'),
+  loginAdmins: Schema.array(String)
+    .default([])
+    .description('允许私聊扫码管理音乐账号的用户；Koishi 权限等级 4 及以上也可操作。'),
   pageSize: Schema.number().min(1).max(10).step(1).default(5),
   sessionMinutes: Schema.number().min(1).max(60).default(10),
   timeout: Schema.number().min(1000).max(60000).default(20000),
   proxy: Schema.string().role('secret').default('').description('可选 HTTP 代理地址。'),
-  qqCookie: Schema.string().role('secret').default('').description('可选 QQ音乐 Cookie。'),
   neteaseApi: Schema.string()
     .default('')
     .description('可选网易云 API 服务地址（支持 /search、/song/url/v1、/lyric）。'),
-  neteaseCookie: Schema.string().role('secret').default(''),
   kugouApi: Schema.string().default('').description('可选酷狗 API 服务地址（支持 /search、/song/url）。'),
-  kugouCookie: Schema.string().role('secret').default(''),
   maxAudioMB: Schema.number().min(1).max(100).default(25).description('单个音频的最大 MB。'),
   maxConcurrent: Schema.number().min(1).max(4).step(1).default(2),
   cooldown: Schema.number().min(0).default(1500).description('同一用户请求间隔（毫秒）。'),
@@ -52,12 +54,14 @@ interface State {
   page: number
   expires: number
   generation: number
+  selecting: boolean
 }
 export function apply(ctx: Context, config: Config) {
   if (!/^[\p{L}\p{N}_-]{1,30}$/u.test(config.command))
     throw new PublicError('指令名只能包含文字、数字、下划线或连字符。')
-  const provider = new Providers(config),
-    states = new Map<string, State>(),
+  const accounts = new Accounts(ctx, config, new Providers(config))
+  const providerFor = (s: Session) => new Providers(config, (source) => accounts.cookie(s, source))
+  const states = new Map<string, State>(),
     jobs = new Map<string, AbortController>(),
     last = new Map<string, number>()
   let counter = 0,
@@ -66,6 +70,11 @@ export function apply(ctx: Context, config: Config) {
   const root = ctx
     .command(config.command, '四平台点歌', { authority: 0, checkArgCount: false })
     .option('platform', '-p <platform:string>')
+    .option('list', '-l, --列表')
+    .option('card', '--卡片')
+    .option('voice', '--语音')
+    .option('quality', '-q <quality:string>')
+  accounts.install(root)
   const command = <D extends string>(decl: D, description: string) =>
     root.subcommand(`.${decl}` as const, description, { authority: 0 })
   const error = (e: unknown) => (e instanceof PublicError ? e.message : '音源服务暂不可用，请稍后再试。')
@@ -129,6 +138,7 @@ export function apply(ctx: Context, config: Config) {
     const next = value ?? result.page
     if (!Number.isInteger(next) || next < 1 || next > max) throw new PublicError('已经到达列表边界。')
     result.page = next
+    result.selecting = true
     return h.text(
       `第 ${next}/${max} 页\n${result.tracks
         .slice((next - 1) * config.pageSize, next * config.pageSize)
@@ -139,12 +149,72 @@ export function apply(ctx: Context, config: Config) {
         .join('\n')}\n${config.command} 播放 <序号> / 卡片 <序号> / 语音 <序号> / 下一页，或直接回复序号`,
     )
   }
-  async function search(s: Session, keyword: string, name?: string) {
+  async function playTrack(
+    s: Session,
+    track: Track,
+    output: 'card' | 'voice',
+    level: string | undefined,
+    signal: AbortSignal,
+  ) {
+    const provider = providerFor(s)
+    if (
+      output === 'card' &&
+      s.platform === 'onebot' &&
+      (track.platform === 'netease' || (track.platform === 'qq' && track.shareId))
+    ) {
+      await send(
+        s,
+        h('onebot:music', {
+          type: track.platform === 'netease' ? '163' : 'qq',
+          id: track.shareId || track.id,
+        }),
+        signal,
+      )
+      return
+    }
+    const play = await provider.resolve(track, quality(level), signal)
+    if (signal.aborted || disposed) throw new PublicError('音乐任务已取消。')
+    if (output === 'card') {
+      if (s.platform !== 'onebot') return h.text(`${track.title} — ${track.artist}\n${track.link}`)
+      await send(
+        s,
+        h('onebot:music', {
+          type: 'custom',
+          url: track.link,
+          audio: play.url,
+          title: track.title,
+          content: track.artist,
+          image: track.cover,
+        }),
+        signal,
+      )
+      return
+    }
+    const response = await request(play.url, {
+      ...provider.options(mediaHosts[track.platform], signal),
+      maxBytes: config.maxAudioMB * 1024 * 1024,
+    })
+    if (!['audio', 'video'].includes(mediaKind(response.body) ?? ''))
+      throw new PublicError('音源返回了非音频内容，可能需要重新登录或没有播放权限。')
+    if (signal.aborted || disposed) throw new PublicError('音乐任务已取消。')
+    const title = `${track.title} — ${track.artist}（${play.quality}）`
+    await send(s, h.text(`${title}\n${track.link}`), signal)
+    if (signal.aborted || disposed) throw new PublicError('音乐任务已取消。')
+    await send(s, h.audio(response.body, play.mime), signal)
+  }
+  async function search(
+    s: Session,
+    keyword: string,
+    name?: string,
+    listOnly = false,
+    output = config.output,
+    level?: string,
+  ) {
     return job(s, async (signal) => {
       const id = sessionKey(s),
         generation = ++counter
       states.delete(id)
-      const tracks = await provider.search(
+      const tracks = await providerFor(s).search(
         platform(name ?? config.defaultPlatform),
         keyword,
         config.pageSize * 4,
@@ -153,21 +223,35 @@ export function apply(ctx: Context, config: Config) {
       if (signal.aborted || disposed) throw new PublicError('点歌任务已取消。')
       if (!tracks.length) return '没有搜索到歌曲；请更换关键词或平台。'
       if (states.size >= 500) states.delete(states.keys().next().value!)
-      states.set(id, { tracks, page: 1, expires: Date.now() + config.sessionMinutes * 60_000, generation })
-      return page(s)
+      states.set(id, {
+        tracks,
+        page: 1,
+        expires: Date.now() + config.sessionMinutes * 60_000,
+        generation,
+        selecting: false,
+      })
+      return listOnly ? page(s) : playTrack(s, tracks[0], output, level, signal)
     })
   }
   root.action(({ session, options, args }) => {
     const keyword = (args ?? []).join(' ')
+    if (options?.card && options?.voice) return '请选择音乐卡片或语音中的一种。'
     return keyword
-      ? search(session!, keyword, options?.platform)
+      ? search(
+          session!,
+          keyword,
+          options?.platform,
+          options?.list,
+          options?.voice ? 'voice' : options?.card ? 'card' : config.output,
+          options?.quality,
+        )
       : h.text(
-          `${config.command} <关键词> -p 网易云/QQ/酷狗/酷我\n回复序号选歌，或使用：${config.command} 卡片 1 / 语音 1 / 歌词 1 / 下一页 / 取消`,
+          `${config.command} <关键词> -p 网易云/QQ/酷狗/酷我\n默认直接发送第一首；加 --列表 或使用 搜索 可选歌。也可使用：${config.command} 卡片 1 / 语音 1 / 歌词 1 / 下一页 / 取消`,
         )
   })
   command('搜索 <keyword:text>', '搜索歌曲')
     .option('platform', '-p <platform:string>')
-    .action(({ session, options }, keyword) => search(session!, keyword, options?.platform))
+    .action(({ session, options }, keyword) => search(session!, keyword, options?.platform, true))
   command('列表 [page:posint]', '查看选曲列表').action(({ session }, index) => {
     try {
       return page(session!, index)
@@ -205,56 +289,13 @@ export function apply(ctx: Context, config: Config) {
                   : config.output
           const s = session!,
             track = selected(s, index)
-          if (
-            output === 'card' &&
-            s.platform === 'onebot' &&
-            (track.platform === 'netease' || (track.platform === 'qq' && track.shareId))
-          ) {
-            await send(
-              s,
-              h('onebot:music', {
-                type: track.platform === 'netease' ? '163' : 'qq',
-                id: track.shareId || track.id,
-              }),
-              signal,
-            )
-            return
-          }
-          const play = await provider.resolve(track, quality(options?.quality), signal)
-          if (signal.aborted || disposed) throw new PublicError('音乐任务已取消。')
-          if (output === 'card') {
-            if (s.platform !== 'onebot') return h.text(`${track.title} — ${track.artist}\n${track.link}`)
-            await send(
-              s,
-              h('onebot:music', {
-                type: 'custom',
-                url: track.link,
-                audio: play.url,
-                title: track.title,
-                content: track.artist,
-                image: track.cover,
-              }),
-              signal,
-            )
-            return
-          }
-          const response = await request(play.url, {
-            ...provider.options(mediaHosts[track.platform], signal),
-            maxBytes: config.maxAudioMB * 1024 * 1024,
-          })
-          if (!['audio', 'video'].includes(mediaKind(response.body) ?? ''))
-            throw new PublicError('音源返回了非音频内容，可能需要重新登录或没有播放权限。')
-          if (signal.aborted || disposed) throw new PublicError('音乐任务已取消。')
-          const title = `${track.title} — ${track.artist}（${play.quality}）`
-          await send(s, h.text(`${title}\n${track.link}`), signal)
-          if (signal.aborted || disposed) throw new PublicError('音乐任务已取消。')
-          await send(s, h.audio(response.body, play.mime), signal)
+          return playTrack(s, track, output, options?.quality, signal)
         }),
       )
   command('歌词 <index:posint>', '查看歌曲歌词').action(({ session }, index) =>
     job(session!, async (signal) => {
       const track = selected(session!, index)
-      return h.text(`${track.title} — ${track.artist}\n${await provider.lyrics(track, signal)}`)
+      return h.text(`${track.title} — ${track.artist}\n${await providerFor(session!).lyrics(track, signal)}`)
     }),
   )
   command('取消', '取消当前音乐任务').action(({ session }) => {
@@ -266,7 +307,8 @@ export function apply(ctx: Context, config: Config) {
     const token = session.content?.trim() ?? ''
     if (!/^\d{1,2}$/.test(token) || session.userId === session.selfId) return next()
     const current = states.get(sessionKey(session))
-    if (!current || current.expires <= Date.now() || !current.tracks[Number(token) - 1]) return next()
+    if (!current?.selecting || current.expires <= Date.now() || !current.tracks[Number(token) - 1])
+      return next()
     return session.execute(`${config.command}.播放 ${Number(token)}`)
   })
   ctx.setInterval(() => {

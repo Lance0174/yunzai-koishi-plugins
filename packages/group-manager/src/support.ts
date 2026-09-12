@@ -4,12 +4,14 @@ import { Store } from './store'
 import { State } from './state'
 import { Member, internal, timed } from './onebot'
 import { UserError } from './errors'
+import { Lists } from './lists'
 
 export interface Host {
   ctx: Context
   config: Config
   root: Command
   store: Store
+  lists: Lists
   active(bot: Bot): boolean
   botKey(bot: Bot): string
   permission(
@@ -28,6 +30,7 @@ export interface Host {
   guard<T>(fn: () => Promise<T>): Promise<T | string>
   requireReview(s: Session): void
   flush(): Promise<void>
+  notifyVerification(bot: Bot, guild: string, user: string, eventId: string): Promise<void>
 }
 export const plain = (value: unknown) => h.text(String(value ?? ''))
 export function bounded(input: string, label: string, max = 500) {
@@ -54,11 +57,8 @@ export async function quoteId(host: Host, s: Session) {
     throw new UserError('无法确认引用消息属于当前群。')
   return s.quote.id
 }
-export async function exempt(state: State, bot: string, guild: string, user: string) {
-  return (await state.get(bot, guild, 'exempt', user))?.state === 'enabled'
-}
 export async function punishable(host: Host, state: State, s: Session, user: string) {
-  if (await exempt(state, host.botKey(s.bot), s.guildId!, user))
+  if (await host.lists.exempt(host.botKey(s.bot), s.guildId!, user))
     throw new UserError('该成员在处罚豁免名单中。')
 }
 export function finiteTime(value: unknown): number | undefined {
@@ -73,6 +73,6 @@ export function scope(host: Host, s: Session) {
     host.active(s.bot) &&
     !!s.guildId &&
     !!s.userId &&
-    host.config.managedGroups.includes(s.guildId)
+    (!host.config.managedGroups.length || host.config.managedGroups.includes(s.guildId))
   )
 }

@@ -3,11 +3,11 @@ import { createHash } from 'node:crypto'
 import { identify, VideoProviders, ProviderConfig, names, mediaHosts } from './providers'
 import { PublicError, DeliveryError, request, mediaKind } from './net'
 import { Queue } from './queue'
-import { Media, MediaConfig } from './media'
+import { Media, MediaConfig, checkTools } from './media'
 
-export const name = 'ember-video-parser'
+export const name = 'yunzai-video-parser'
 export const usage =
-  '直接发送 B站、抖音、小红书链接或分享卡片即可解析，不需要指令前缀。也可使用“视频解析 预览 <链接>”。服务器需要 ffmpeg 和 ffprobe。'
+  '先在 Koishi 所在容器安装 ffmpeg 和 ffprobe，再用“视频解析 诊断”检查。直接发送 B站、抖音、小红书链接或分享卡片即可解析，默认合并转发说明、封面和视频。\n\n迁移来源：[rconsole-plugin / kyrzy0416 及 R-plugin 贡献者](https://gitee.com/kyrzy0416/rconsole-plugin)。详见安装包 THIRD_PARTY_NOTICES.md。'
 export interface Config extends ProviderConfig, MediaConfig {
   command: string
   autoParse: boolean
@@ -17,6 +17,7 @@ export interface Config extends ProviderConfig, MediaConfig {
   jobTimeout: number
   cooldown: number
   showProgress: boolean
+  forward: boolean
 }
 export const Config: Schema<Config> = Schema.object({
   command: Schema.string().default('视频解析'),
@@ -25,6 +26,7 @@ export const Config: Schema<Config> = Schema.object({
     .default([])
     .description('限定自动解析的群号；留空适用当前插件作用范围内的群和私聊。'),
   showProgress: Schema.boolean().default(false).description('显示任务编号和排队提示。默认直接发送解析结果。'),
+  forward: Schema.boolean().default(true).description('默认将说明、封面和视频放入一条合并转发消息。'),
   biliCookie: Schema.string().role('secret').default(''),
   douyinCookie: Schema.string().role('secret').default(''),
   xhsCookie: Schema.string().role('secret').default(''),
@@ -98,6 +100,21 @@ export function apply(ctx: Context, config: Config) {
     last = new Map<string, number>()
   const canonicalJobs = new Set<string>()
   let disposed = false
+  let dependencies: Promise<string[]> | undefined
+  const ensureTools = (refresh = false) => {
+    if (refresh) dependencies = undefined
+    return (dependencies ??= checkTools(config).catch((error) => {
+      dependencies = undefined
+      throw error
+    }))
+  }
+  ctx.on('ready', async () => {
+    try {
+      await ensureTools()
+    } catch (e) {
+      ctx.logger(name).warn(e instanceof Error ? e.message : '视频依赖检查失败。')
+    }
+  })
   const error = (e: unknown) => (e instanceof PublicError ? e.message : '视频处理失败，请稍后再试。')
   async function run(s: Session, content: string, preview: boolean, part: number, automatic = false) {
     if (disposed || !s.userId || !s.channelId) return '当前会话不可用。'
@@ -117,6 +134,8 @@ export function apply(ctx: Context, config: Config) {
       ticket = queue.add(owner, key, async (signal) => {
         await ready
         if (signal.aborted || disposed) throw new PublicError('视频任务已取消。')
+        if (!preview) await ensureTools()
+        if (signal.aborted || disposed) throw new PublicError('视频任务已取消。')
         const video = await provider.resolve(input, part, signal)
         const canonical = JSON.stringify([video.site, video.id, video.part, preview])
         if (canonicalJobs.has(canonical)) throw new PublicError('此视频已有任务正在处理，请稍后重试。')
@@ -134,21 +153,25 @@ export function apply(ctx: Context, config: Config) {
               /* A cover failure must not discard an otherwise usable video. */
             }
           if (signal.aborted || disposed) throw new PublicError('视频任务已取消。')
-          await deliver(
-            s,
-            [
-              h.text(
-                `${names[video.site]} · ${video.title}\n${video.author}${video.seconds ? ` · ${Math.round(video.seconds)} 秒` : ''}\n${video.url}`,
-              ),
-              ...(cover ? [h.image(cover, 'image/jpeg')] : []),
-            ],
-            config.timeout,
-            signal,
-          )
-          if (preview) return
-          const bytes = await media.prepare(video, signal)
+          const description = [
+            h.text(
+              `${names[video.site]} · ${video.title}\n${video.author}${video.seconds ? ` · ${Math.round(video.seconds)} 秒` : ''}\n${video.url}`,
+            ),
+            ...(cover ? [h.image(cover, 'image/jpeg')] : []),
+          ]
+          const bytes = preview ? undefined : await media.prepare(video, signal)
           if (signal.aborted || disposed) throw new PublicError('视频任务已取消。')
-          await deliver(s, h.video(bytes, 'video/mp4'), config.timeout, signal)
+          if (config.forward && s.platform === 'onebot') {
+            const nodes = [h('message', { userId: s.selfId, nickname: '视频解析' }, description)]
+            if (bytes)
+              nodes.push(
+                h('message', { userId: s.selfId, nickname: '视频解析' }, h.video(bytes, 'video/mp4')),
+              )
+            await deliver(s, h('message', { forward: true }, nodes), config.timeout, signal)
+          } else {
+            await deliver(s, description, config.timeout, signal)
+            if (bytes) await deliver(s, h.video(bytes, 'video/mp4'), config.timeout, signal)
+          }
         } finally {
           canonicalJobs.delete(canonical)
         }
@@ -181,6 +204,15 @@ export function apply(ctx: Context, config: Config) {
   const root = ctx
     .command(config.command, '解析并发送三站视频', { authority: 0, checkArgCount: false })
     .option('part', '-p <part:posint>')
+  root.subcommand('.诊断', '检查 ffmpeg 和 ffprobe 是否可运行', { authority: 0 }).action(async () => {
+    try {
+      return h.text(
+        `视频依赖已就绪。\n${(await ensureTools(true)).join('\n')}\n默认发送：${config.forward ? '合并转发' : '普通消息'}`,
+      )
+    } catch (e) {
+      return h.text(error(e))
+    }
+  })
   root.action(({ session, options, args }) => {
     const url = (args ?? []).join(' ')
     return url

@@ -1,14 +1,16 @@
 {
-  "name": "koishi-plugin-ember-video-parser",
-  "version": "0.2.0",
-  "description": "Koishi B站、抖音、小红书视频解析与下载发送。",
+  "name": "koishi-plugin-yunzai-video-parser",
+  "version": "0.3.0",
+  "description": "参考 R-plugin 的 Koishi B站、抖音、小红书解析迁移，默认合并转发。",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "files": [
     "lib",
     "README.md",
     "LICENSE",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md",
+    "licenses"
   ],
   "license": "MIT",
   "engines": {
@@ -19,7 +21,9 @@
     "video",
     "bilibili",
     "douyin",
-    "xiaohongshu"
+    "xiaohongshu",
+    "yunzai",
+    "migration"
   ],
   "peerDependencies": {
     "koishi": "^4.18.11"
@@ -34,7 +38,7 @@
   },
   "koishi": {
     "description": {
-      "zh": "仅解析 B站、抖音、小红书，支持预览、下载、合流、视频发送和任务取消。"
+      "zh": "参考 R-plugin 的 Koishi B站、抖音、小红书解析迁移，默认合并转发。"
     }
   },
   "dependencies": {

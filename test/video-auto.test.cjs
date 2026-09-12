@@ -113,9 +113,17 @@ const video = (n) => n.params.message.some((s) => s.type === 'video')
 test('default schema enables auto parsing in groups and private chats without any prefix', async () => {
   assert.equal(plugin.Config({}).autoParse, true)
   assert.equal(plugin.Config({}).showProgress, false)
+  assert.equal(plugin.Config({}).forward, true)
   assert.deepEqual(plugin.Config({}).groups, [])
-  await wire.command('分享：https://www.douyin.com/video/12345', 1001, 600, video)
-  await wire.command('https://www.douyin.com/video/12345', 1002, null, video)
+  const group = await wire.command('分享：https://www.douyin.com/video/12345', 1001, 600, video)
+  // The mock server records the send before its acknowledgement completes the job.
+  await waitFor(async () => (await wire.command('#视频解析 任务', 1001, 600)).text.includes('平台已确认发送'))
+  const privateMessage = await wire.command('https://www.douyin.com/video/12345', 1002, null, video)
+  assert.equal(group.action, 'send_group_forward_msg')
+  assert.equal(privateMessage.action, 'send_private_forward_msg')
+  assert.equal(group.params.messages.length, 2)
+  assert.ok(group.params.messages[0].data.content.some((segment) => segment.type === 'text'))
+  assert.ok(group.params.messages[1].data.content.some((segment) => segment.type === 'video'))
   assert.equal(
     wire.sent.some((n) => n.text.includes('已加入队列')),
     false,
@@ -153,4 +161,47 @@ test('malformed and oversized share cards are ignored without executing any cont
   assert.equal(plugin.shareText({ content: String(bad), elements: [bad] }), '')
   assert.equal(plugin.shareText({ content: '', elements: [h('json', { data: 'a'.repeat(65537) })] }), '')
   assert.equal(globalThis.bad, undefined)
+})
+
+test('missing ffmpeg and ffprobe fail before any source or media request and diagnostics name both tools', async () => {
+  const fork = app.plugin((ctx) =>
+    plugin.apply(
+      ctx,
+      plugin.Config({
+        command: '依赖测试',
+        autoParse: false,
+        cooldown: 0,
+        ffmpeg: path.join(folder, 'missing-ffmpeg'),
+        ffprobe: path.join(folder, 'missing-ffprobe'),
+      }),
+    ),
+  )
+  try {
+    const from = network.calls.length
+    const result = await wire.command('#依赖测试 https://www.douyin.com/video/12345', 1001, 600)
+    assert.match(result.text, /依赖未就绪.*ffmpeg、ffprobe/)
+    assert.equal(network.calls.length, from)
+    assert.match((await wire.command('#依赖测试 诊断', 1001, 600)).text, /apk add --no-cache ffmpeg/)
+  } finally {
+    await fork.dispose()
+  }
+})
+
+test('a rejected merged-message send is reported once without silently resending the video as normal messages', async () => {
+  const from = wire.actions.length
+  wire.failures.set('send_group_forward_msg', 100)
+  try {
+    const result = await wire.command('https://www.douyin.com/video/12345', 1001, 600, (row) =>
+      row.text.includes('发送失败'),
+    )
+    assert.match(result.text, /发送失败或结果未知/)
+    const actions = wire.actions.slice(from)
+    assert.equal(actions.filter((a) => a.action === 'send_group_forward_msg').length, 1)
+    assert.equal(
+      actions.some((a) => a.params.message?.some((s) => s.type === 'video')),
+      false,
+    )
+  } finally {
+    wire.failures.delete('send_group_forward_msg')
+  }
 })
