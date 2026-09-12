@@ -11,4 +11,4 @@
 
 各包 README 和 Koishi 控制台 usage 均标明直接相关来源。原项目源码、图片、字体及可执行文件未随本包复制分发。Koishi 版本重写了命令、数据库和 OneBot 调用；行为逐项对应说明见源码中的 docs/MIGRATION-REVIEW.md。本包相关的上游许可证文本保留在 licenses/，其权利不会被本项目 LICENSE 覆盖。
 
-本项目自行编写的 Koishi 实现采用 MIT。原参考项目分别保留其自己的许可证，列出作者表示功能来源和致谢，不表示原作者参与或担保了本次迁移。Koishi、OneBot 适配器、https-proxy-agent、ipaddr.js、json5、qrcode 等依赖各自保留原许可。ffmpeg/ffprobe 由运行环境安装，不随插件分发。
+本项目自行编写的 Koishi 实现采用 MIT。原参考项目分别保留其自己的许可证，列出作者表示功能来源和致谢，不表示原作者参与或担保了本次迁移。Koishi、OneBot 适配器、https-proxy-agent、ipaddr.js、json5、qrcode 等依赖各自保留原许可。视频 0.3.1 在运行时按需自动下载 ffmpeg/ffprobe，二进制不放入 npm 安装包。工具下载自 eugeneware/ffmpeg-static 的 b6.1.1 固定发布（https://github.com/eugeneware/ffmpeg-static/releases/tag/b6.1.1）；感谢 FFmpeg 开发者、Eugene Ware、Jannis R 及静态构建贡献者。Linux 构建来源为 John Van Sickle，Windows x64 构建来源为 Gyan Doshi，macOS 构建来源见上游 README。每个工具保留自己的许可证（GPL-3.0-or-later 等）；视频包附 licenses/FFmpeg-LICENSE.txt，运行时也保存许可、来源和 SHA256。工具源码和构建信息见 https://ffmpeg.org/ 与 https://github.com/eugeneware/ffmpeg-static ，不受本插件 MIT 许可替代。

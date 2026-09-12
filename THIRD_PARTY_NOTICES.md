@@ -13,4 +13,4 @@
 
 新增网易云扫码模块根据 **NeteaseCloudMusicApi 4.32.0** 的 login_qr_key / login_qr_check、eapi 请求封装适配 Node.js crypto。该项目作者为 **Binaryify 及贡献者**，采用 MIT；完整版权与许可见 licenses/netease-api-MIT.txt。npm 来源：https://www.npmjs.com/package/NeteaseCloudMusicApi 。本次新增的二维码绘制使用 qrcode，由 npm 安装并保留其 MIT 许可。
 
-本项目自行编写的 Koishi 实现采用 MIT。原参考项目分别保留其自己的许可证，列出作者表示功能来源和致谢，不表示原作者参与或担保了本次迁移。Koishi、OneBot 适配器、https-proxy-agent、ipaddr.js、json5、qrcode 等依赖各自保留原许可。ffmpeg/ffprobe 由运行环境安装，不随插件分发。
+本项目自行编写的 Koishi 实现采用 MIT。原参考项目分别保留其自己的许可证，列出作者表示功能来源和致谢，不表示原作者参与或担保了本次迁移。Koishi、OneBot 适配器、https-proxy-agent、ipaddr.js、json5、qrcode 等依赖各自保留原许可。视频 0.3.1 在运行时按需自动下载 ffmpeg/ffprobe，二进制不放入 npm 安装包。工具下载自 eugeneware/ffmpeg-static 的 b6.1.1 固定发布（https://github.com/eugeneware/ffmpeg-static/releases/tag/b6.1.1）；感谢 FFmpeg 开发者、Eugene Ware、Jannis R 及静态构建贡献者。Linux 构建来源为 John Van Sickle，Windows x64 构建来源为 Gyan Doshi，macOS 构建来源见上游 README。每个工具保留自己的许可证（GPL-3.0-or-later 等）；视频包附 licenses/FFmpeg-LICENSE.txt，运行时也保存许可、来源和 SHA256。工具源码和构建信息见 https://ffmpeg.org/ 与 https://github.com/eugeneware/ffmpeg-static ，不受本插件 MIT 许可替代。

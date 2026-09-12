@@ -1,48 +1,39 @@
-# 0.3.0 开发与交付报告
+# 视频 0.3.1：自动安装媒体工具
 
-按本次用户要求修正三个插件的默认行为和迁移署名。版本 0.3.0；新包名为 koishi-plugin-yunzai-group-manager、koishi-plugin-yunzai-music-request、koishi-plugin-yunzai-video-parser。旧版记录分别保存在 docs/history/DEVELOPMENT-0.1.0.md 和 DEVELOPMENT-0.2.0.md。
+本轮补齐缺少 ffmpeg/ffprobe 时的自动安装；群管与点歌保持 0.3.0，两个安装包的哈希与此前交付一致。此前完整报告保存在 docs/history/DEVELOPMENT-0.3.0.md。
 
-## 已实现
+## 实现结果
 
-- 点歌：普通关键词直接发送第一首，卡片 / 语音可选择；主动搜索或 --列表 保留多选，自动点播后不截获数字闲聊。配置不提供音乐 Cookie 字段；网易云直接扫码及兼容 API 扫码、私聊管理员权限、按 Bot 保存、账号状态 / 退出、3 分钟过期和取消防迟到响应均已实现。
-- 群管：新配置默认所有群可用，仍核验真实角色；默认开放已有群管命令、投票、自助头衔和验证码，验证码默认超时不踢人。新黑白名单支持本群用户、全局用户、全局群号；黑名单忽略消息，白名单豁免处罚 / 验证但不授予权限。原豁免记录继续可读。
-- 事件：独立监听不依赖群管、请求审核和 reviewGroups；默认私聊管理员，可配置多群 / 多私聊目的地。事件通知默认开启，以持久指令按 Bot / 群切换；发送时再次核验来源开关和目的地，旧待发事件不会转投新收件人。聊天正文监听单独启用。
-- 视频：必须在 Koishi 所在环境安装 ffmpeg / ffprobe；新增启动自检、解析前检查和诊断指令。默认经官方 OneBot 编码为群聊 / 私聊合并消息，包含说明 / 封面和视频；明确失败或未知结果不重复投递。
-- 作者与分发：原仓库链接、作者、具体功能、固定审查快照及许可证，放入各包 README、控制台 usage、THIRD_PARTY_NOTICES 和许可证目录；安装包检查强制要求这些文件存在。没有用用户名字命名新包。
-- 升级：脚本先校验三个 tgz，再备份并修改项目依赖和 Koishi 配置键；移除旧音乐 Cookie 和 managedGroups 门槛，保留其它插件和 Koishi 版本。缺失的图床 file 依赖使用已发布的 0.1.2 恢复。原数据库内部表名保留，避免丢失审核 / 名单 / 任务 / 审计数据。
+- autoInstall 默认开启。先使用配置路径 / PATH 和有效缓存，缺少的工具自动下载到 data/yunzai-video-parser/tools，无需 root、apk、apt、tar、unzip 或 npm postinstall。
+- 固定使用 eugeneware/ffmpeg-static 的 b6.1.1 发布，支持 Linux x64 / ARM64、Windows x64、macOS x64 / ARM64；Linux 使用无动态加载器的静态构建。下载器自行实现，不执行上游 npm 安装脚本。
+- 启动后后台准备，不阻塞 Koishi 启动；排队视频等待工具就绪后继续，准备耗时不占视频处理时限。诊断可查看进度和重试，既有默认合并转发保留。
+- 下载最多 3 次尝试、递增重试间隔、整体默认 10 分钟限时。流式下载和 gzip 解压均限制大小，检查可执行文件头和版本后才启用。缓存记录 SHA256，损坏后重新下载；取消单个视频不会取消其它视频共用的安装，卸载会终止下载并清理未完成文件。
+- 包内和安装后的工具目录均保留 FFmpeg 原许可与来源信息。所有原插件作者和迁移来源继续保留在 README、usage 和 NOTICE。
+- 升级脚本识别群管 / 点歌 0.3.0 与视频 0.3.1 的组合，保留既有配置备份、失效图床 file 依赖修复和包名迁移。
 
-## 验证结果
+## 最终验证
 
-Windows、Node 24.16.0、Koishi 4.18.11、官方 OneBot 适配器 6.9.4、SQLite 4.7.0；PATH 中真实 ffmpeg / ffprobe。`npm test`：**88 通过，0 失败，0 跳过**，含三个 TypeScript 包构建。
+- npm test：97 项通过，0 失败，0 跳过，三个 TypeScript 包构建通过。新增覆盖自动下载、并发复用、重启缓存、损坏修复、自动重试、无效文件 / 重定向拒绝、取消与卸载、安装不占视频超时，以及关闭 Koishi 时后台依赖检查的竞态。
+- 最终三个 tgz 分别独立安装到 Koishi 4.18.11，包加载、命令、默认值、署名和许可证检查通过。视频 autoInstall 默认为 true。最终包哈希与 package-smoke.json 记录匹配。
+- Windows x64：在配置的两个工具路径均不存在的情况下，实际调用插件下载器从 GitHub 下载并安装 ffmpeg 与 ffprobe 6.1.1；使用下载后的 ffmpeg 生成 H.264 / AAC MP4，再用下载后的 ffprobe 检查时长、编码和尺寸，全部通过。中途网络失败后重试复用已完成的 ffmpeg，最终两工具均就绪。记录见 tools-live-windows.json。
+- Linux x64 / ARM64：实际读取四个发布资源的 gzip / ELF 程序头，确认架构正确且均无 PT_INTERP 动态加载器。记录见 tools-linux-static.json。本机没有可用 Docker / WSL 运行环境，未把 ELF 静态检查写成 Alpine 实机运行通过；macOS 也未实机执行。
+- 真实 Yarn 4.12.0 升级通过，使用最终 tgz，保留 Koishi 4.18.11 / auto-mas 0.0.2，图床依赖恢复为 0.1.2。第三方安装脚本关闭；保留 auto-mas 原有精确 peer 警告，未验证其运行兼容性。记录见 upgrade-install-0.3.1.json。
 
-新增验证包括：默认首曲卡片 / 语音及显式列表，二维码图片、扫码待确认 / 成功 / 过期、按 Bot / 服务来源隔离、凭据不回显、退出后迟到响应不重绑；无管理群名单时禁言可用，黑名单忽略后续中间件、白名单不提升权限、群黑白名单优先级、私聊 / 群聊收件人、关闭群管和审核后继续监听、配置重载后开关保留；两个 OneBot forward API 的真实编码、缺依赖时零源站请求、发送失败不自动拆分重发，以及 YAML / JSON 配置迁移、缺包不写文件和升级备份。
+视频安装包：koishi-plugin-yunzai-video-parser-0.3.1.tgz，45235 字节，SHA256 为 8dba98431b8986abda2130e7fcd30523ef12e13e1b3d2cbd984b5e0238436f03。
 
-网易云公开接口实查：直接 eapi 请求返回 code=200 和有效二维码标识（见 netease-qr-probe.json），未扫描真实账号。扫码确认后的登录保存与音源读取路径使用受控响应验证，不据此宣称会员音质或完整歌曲已实机验收。
+## 实际问题与处理
 
-最终三个 tarball 均分别安装进独立 Koishi 4.18.11 项目，加载、命令、默认配置、来源文件与许可证检查通过。真实 Yarn 4.12.0 在含 auto-mas@0.0.2、丢失的旧三个 tgz 和旧图床 file 依赖的隔离项目中，执行升级脚本及 yarn install 成功；保留 Koishi 4.18.11 和 auto-mas 0.0.2，图床恢复为 0.1.2，新三个插件为 0.3.0。Yarn 保留原有 peer 警告。安装脚本在隔离验收中禁用，未验证 auto-mas 的运行兼容性。实际版本与三包哈希见交付目录 package-smoke.json、upgrade-install.json。
-
-没有连接用户服务器或向真实 QQ 发送消息。合并视频在用户 SnowLuma / QQ 客户端中的实际可播放性、账号登录后的歌曲权限仍未验证。0.2.0 的历史 B站真实媒体测试没有改记为本轮再次实测。仍未迁移的原库功能见 docs/MIGRATION-REVIEW.md。
-
-## 实际遇到的问题和处理
-
-| 问题 | 处理结果 |
+| 问题 | 处理 |
 | --- | --- |
-| 用户此前误用 /path/ 及旧图床 0.1.1 file 依赖丢失、npm ERESOLVE | 升级脚本校验新包、替换失效依赖，安装统一使用 Yarn；不改变 auto-mas 或 Koishi 版本，auto-mas 的精确 peer 警告保留 |
-| 初始 rg 检索包含不存在的 tests 目录；Windows 路径通配 packages/*/LICENSE 不被 rg 展开 | 按实际 test 目录检索，改用 rg -g LICENSE |
-| 网易云 QR 参考仓库的三个 raw URL 返回 404 | 改查 npm 官方 NeteaseCloudMusicApi 4.32.0 发布包，核对模块与请求封装及 MIT 版权；未依赖未读到的代码猜测接口 |
-| Python 在 Windows 默认 GBK 读取 UTF-8 package.json 导致 UnicodeDecodeError | 改为显式 UTF-8，只续做未完成的 manifest 修改 |
-| 首次 TypeScript 构建：投递数组 any、Session authority 泛型和扩展事件名类型错误 | 显式 EventRow、受限 authority 视图、按适配器实际扩展事件绑定；构建通过 |
-| 首轮测试 70/73，旧测试仍预期验证码默认关闭，后续依赖前一测试设置的踢出策略也失败 | 更新默认开启且不踢出的验收；显式踢出及豁免 / 取消验证仍保留，没有降低处罚成功断言 |
-| 更新测试时 apply_patch 上下文不匹配 | 补丁未写入，改按实际内容修改，随后验收 |
-| 第二轮 85/86：缺工具用例重复注册同一非 reusable 插件，被 Koishi 拒绝 | 使用独立测试包装上下文，验证真正的缺工具实例；该轮全套 87/87，后续补充验证最终 88/88 |
-| 负向测试刻意触发缺 ffmpeg/ffprobe 和合并消息发送失败日志 | 属于预期故障注入，验证停止下载及不重复发送；不作为成功发送样本 |
-| Yarn 把嵌套验收目录当成上层工作区，拒绝 install | 为隔离项目创建独立 yarn.lock，实际安装成功；没有修改上层工作区定义 |
-| 最后检查发现验证超时仍使用旧 reviewGroups | 接入独立监听收件人，新增无审核群但私聊收到超时通知的测试 |
-| 跨会话连续解析同一视频时，测试端记录发送早于队列清理，偶发进入重复任务保护 | 第二会话测试前先通过任务指令确认前一任务完成；保留生产去重行为，最终全套通过 |
-| Windows CRLF / LF 转换提示 | 仅格式化本轮改动的 TS / CJS / JSON 文件，使用 LF；最终 diff 检查 |
-| 提交前 git diff --cached --check 报告 Mulan 许可证原文行尾空白 | 保留原文，仅用 .gitattributes 为 Mulan 许可文本关闭行尾空白规则；其余空白检查保留，不改变已验收的安装包 |
-| 交付脚本使用 Path.with_suffix 将目录版本号末尾 .0 当成扩展名，外层 ZIP 首次命名为 0.3.zip | 改为在完整目录名后追加 .zip，重新生成 0.3.0 交付归档并校验 CRC 和全部文件哈希；三个 tgz 内容不变 |
+| Node fetch / npm 查询直连返回 ETIMEDOUT，部分元数据经代理仍断开 | 使用本机已配置的代理做本轮读取，必要时用 Python 标准库获取公开元数据；未修改全局代理或 npm 登录信息 |
+| GitHub 公共 API 403 限流、gh API EOF，部分旧 b6.0 链接与资源页 404 | 从 npm 正式包核对发布信息，再以真实资源读取验证；没有采用读不到的旧链接 |
+| 备选 ffbinaries API 返回 403，另一备选站点 TLS 证书校验失败 | 未关闭证书验证，最终未使用这些备选来源 |
+| 一组 descriptinc 标称静态构建实际含 PT_INTERP 动态加载器 | 放弃该组二进制，改用 eugeneware b6.1.1；重新检查 Linux x64 / ARM64 的两个工具，均无动态加载器 |
+| 本机 wsl --list 返回帮助及非零退出码，输出为 UTF-16；未找到 Docker | 未安装或改动本机虚拟化环境；Linux 只记录发布资源和 ELF 验证，Windows 做真实运行验收 |
+| Windows 实际 ffprobe 下载多次 ECONNRESET，首次完整准备失败 | 下载重试和后续重试均保留已完成 ffmpeg，清理未完成 ffprobe；之后从同一最终发布源完成下载并通过转码 / 探测 |
+| 初次新包独立安装验收在停止时出现 TypeError: ctx.logger is not a function | 后台检查回调访问了已释放的 Context 日志服务；初始化时保存 logger，关闭后跳过日志，补充生命周期回归测试，最终 97/97 及三包独立安装通过 |
+| 首次 Yarn 升级验收出现 TLS 连接建立前断开 | 保留失败日志；最终隔离项目复用已有成功项目的依赖锁文件后安装通过，不更改生产版本约束 |
 
-所有实际账号凭据仅由用户在自己的机器人扫码后产生，不写入源码、安装包、测试证据或日志。测试使用合成账号值；本轮公开 QR 探测记录不包含二维码 key。上游源码未重新打包，只附相应许可原文。
+## 验收边界
 
-当前交付为本地源码及安装包，未上传 GitHub、npm 或 Koishi 市场。
+尚未连接用户的 SnowLuma 服务器，也没有向真实 QQ 发送视频。本轮交付为本地源码和安装包，未发布 GitHub、npm 或 Koishi 市场。默认自动安装需要可写数据目录、足够空间和发布源网络可达；网络受限时可使用现有 proxy 配置。仅补充媒体工具自动安装，原先已明确的其他迁移边界不变，见 docs/MIGRATION-REVIEW.md。

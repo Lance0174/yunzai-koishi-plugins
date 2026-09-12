@@ -14,6 +14,7 @@ export interface Ticket<T> {
 interface Pending<T> {
   ticket: Ticket<T>
   run: (signal: AbortSignal) => Promise<T>
+  prepare?: (signal: AbortSignal) => Promise<unknown>
   resolve: (value: T) => void
   reject: (error: unknown) => void
 }
@@ -27,7 +28,12 @@ export class Queue<T> {
     readonly capacity: number,
     readonly timeout: number,
   ) {}
-  add(owner: string, key: string, run: (signal: AbortSignal) => Promise<T>): Ticket<T> {
+  add(
+    owner: string,
+    key: string,
+    run: (signal: AbortSignal) => Promise<T>,
+    prepare?: (signal: AbortSignal) => Promise<unknown>,
+  ): Ticket<T> {
     if (this.closed) throw new PublicError('插件正在停止。')
     if ([...this.tickets.values()].some((t) => t.key === key && ['queued', 'running'].includes(t.state)))
       throw new PublicError('此视频已有任务正在处理，请稍后重试。')
@@ -50,7 +56,7 @@ export class Queue<T> {
       error: '',
     }
     this.tickets.set(ticket.id, ticket)
-    this.pending.push({ ticket, run, resolve, reject })
+    this.pending.push({ ticket, run, prepare, resolve, reject })
     for (const [id, old] of this.tickets)
       if (this.tickets.size > 200 && !['queued', 'running'].includes(old.state)) this.tickets.delete(id)
     this.pump()
@@ -62,9 +68,14 @@ export class Queue<T> {
         { ticket } = pending
       if (ticket.control.signal.aborted) continue
       ticket.state = 'running'
-      const timer = setTimeout(() => ticket.control.abort(), this.timeout)
+      let timer: ReturnType<typeof setTimeout> | undefined
       const work = Promise.resolve()
-        .then(() => pending.run(ticket.control.signal))
+        .then(async () => {
+          await pending.prepare?.(ticket.control.signal)
+          if (ticket.control.signal.aborted) throw new PublicError('视频任务已取消。')
+          timer = setTimeout(() => ticket.control.abort(), this.timeout)
+          return pending.run(ticket.control.signal)
+        })
         .then((value) => {
           if (ticket.control.signal.aborted) throw new PublicError('视频任务已取消或超时。')
           ticket.state = 'completed'

@@ -1,9 +1,10 @@
-// Run inside the Koishi project after uploading all three 0.3.0 tarballs.
+// Run inside Koishi after uploading group/music 0.3.0 and video 0.3.1 tarballs.
 // Keeps YAML formatting and comments; never prints configuration values.
 const fs = require('node:fs')
 const path = require('node:path')
 const names = ['group-manager', 'music-request', 'video-parser']
-const version = '0.3.0'
+const version = '0.3.1'
+const versions = { 'group-manager': '0.3.0', 'music-request': '0.3.0', 'video-parser': '0.3.1' }
 
 function migrateYaml(content) {
   let plugin = '',
@@ -67,7 +68,7 @@ function prepare(directory) {
     manifest = JSON.parse(original)
   if (!manifest.dependencies) manifest.dependencies = {}
   for (const name of names) {
-    const tarball = `koishi-plugin-yunzai-${name}-${version}.tgz`
+    const tarball = `koishi-plugin-yunzai-${name}-${versions[name]}.tgz`
     if (!fs.existsSync(path.join(project, tarball)) || fs.statSync(path.join(project, tarball)).size === 0)
       throw new Error(`请先把 ${tarball} 放到当前 Koishi 项目目录。`)
     for (const section of ['dependencies', 'devDependencies', 'optionalDependencies'])

@@ -3,12 +3,13 @@ import { createHash } from 'node:crypto'
 import { identify, VideoProviders, ProviderConfig, names, mediaHosts } from './providers'
 import { PublicError, DeliveryError, request, mediaKind } from './net'
 import { Queue } from './queue'
-import { Media, MediaConfig, checkTools } from './media'
+import { Media, MediaConfig } from './media'
+import { MediaTools, ToolsConfig } from './tools'
 
 export const name = 'yunzai-video-parser'
 export const usage =
-  '先在 Koishi 所在容器安装 ffmpeg 和 ffprobe，再用“视频解析 诊断”检查。直接发送 B站、抖音、小红书链接或分享卡片即可解析，默认合并转发说明、封面和视频。\n\n迁移来源：[rconsole-plugin / kyrzy0416 及 R-plugin 贡献者](https://gitee.com/kyrzy0416/rconsole-plugin)。详见安装包 THIRD_PARTY_NOTICES.md。'
-export interface Config extends ProviderConfig, MediaConfig {
+  '缺少 ffmpeg/ffprobe 时默认自动下载安装到插件数据目录，无需执行系统安装命令。可用“视频解析 诊断”查看进度或重试。直接发送 B站、抖音、小红书链接或分享卡片即可解析，默认合并转发说明、封面和视频。\n\n迁移来源：[rconsole-plugin / kyrzy0416 及 R-plugin 贡献者](https://gitee.com/kyrzy0416/rconsole-plugin)。媒体工具来源：FFmpeg、eugeneware/ffmpeg-static 及其贡献者。详见安装包 THIRD_PARTY_NOTICES.md。'
+export interface Config extends ProviderConfig, MediaConfig, ToolsConfig {
   command: string
   autoParse: boolean
   groups: string[]
@@ -40,6 +41,14 @@ export const Config: Schema<Config> = Schema.object({
   cacheMinutes: Schema.number().min(0).max(1440).default(30),
   ffmpeg: Schema.string().default('ffmpeg').description('ffmpeg 可执行文件路径。'),
   ffprobe: Schema.string().default('ffprobe').description('ffprobe 可执行文件路径，用于校验媒体。'),
+  autoInstall: Schema.boolean()
+    .default(true)
+    .description('缺少媒体工具时自动下载到插件数据目录，无需管理员权限。'),
+  toolDownloadTimeout: Schema.number()
+    .min(30000)
+    .max(1800000)
+    .default(600000)
+    .description('自动准备媒体工具的总超时（毫秒），不占视频处理时限。'),
   concurrency: Schema.number().min(1).max(3).step(1).default(1),
   queueSize: Schema.number().min(0).max(10).step(1).default(3),
   jobTimeout: Schema.number().min(10000).max(600000).default(180000).description('整个任务超时（毫秒）。'),
@@ -95,25 +104,25 @@ export function apply(ctx: Context, config: Config) {
   if (!/^[\p{L}\p{N}_-]{1,30}$/u.test(config.command))
     throw new PublicError('指令名只能包含文字、数字、下划线或连字符。')
   const provider = new VideoProviders(config),
-    media = new Media(ctx.baseDir || process.cwd(), provider, config)
+    media = new Media(ctx.baseDir || process.cwd(), provider, { ...config })
+  let disposed = false
+  const logger = ctx.logger(name)
+  const tools = new MediaTools(ctx.baseDir || process.cwd(), config, (message) => {
+    if (!disposed) logger.info(message)
+  })
   const queue = new Queue<void>(config.concurrency, config.queueSize, config.jobTimeout),
     last = new Map<string, number>()
   const canonicalJobs = new Set<string>()
-  let disposed = false
-  let dependencies: Promise<string[]> | undefined
-  const ensureTools = (refresh = false) => {
-    if (refresh) dependencies = undefined
-    return (dependencies ??= checkTools(config).catch((error) => {
-      dependencies = undefined
-      throw error
-    }))
+  const ensureTools = async (signal?: AbortSignal, refresh = false) => {
+    const result = await tools.ensure(signal, refresh)
+    media.config.ffmpeg = result.ffmpeg
+    media.config.ffprobe = result.ffprobe
+    return result
   }
-  ctx.on('ready', async () => {
-    try {
-      await ensureTools()
-    } catch (e) {
-      ctx.logger(name).warn(e instanceof Error ? e.message : '视频依赖检查失败。')
-    }
+  ctx.on('ready', () => {
+    void ensureTools().catch((e) => {
+      if (!disposed) logger.warn(e instanceof Error ? e.message : '视频依赖检查失败。')
+    })
   })
   const error = (e: unknown) => (e instanceof PublicError ? e.message : '视频处理失败，请稍后再试。')
   async function run(s: Session, content: string, preview: boolean, part: number, automatic = false) {
@@ -131,51 +140,54 @@ export function apply(ctx: Context, config: Config) {
       const key = createHash('sha256')
         .update(JSON.stringify([input.site, input.url, part, preview]))
         .digest('hex')
-      ticket = queue.add(owner, key, async (signal) => {
-        await ready
-        if (signal.aborted || disposed) throw new PublicError('视频任务已取消。')
-        if (!preview) await ensureTools()
-        if (signal.aborted || disposed) throw new PublicError('视频任务已取消。')
-        const video = await provider.resolve(input, part, signal)
-        const canonical = JSON.stringify([video.site, video.id, video.part, preview])
-        if (canonicalJobs.has(canonical)) throw new PublicError('此视频已有任务正在处理，请稍后重试。')
-        canonicalJobs.add(canonical)
-        try {
-          let cover: Buffer | undefined
-          if (video.cover)
-            try {
-              const response = await request(video.cover, {
-                ...provider.options(mediaHosts[video.site], signal),
-                maxBytes: 2 * 1024 * 1024,
-              })
-              if (mediaKind(response.body) === 'image') cover = response.body
-            } catch {
-              /* A cover failure must not discard an otherwise usable video. */
+      ticket = queue.add(
+        owner,
+        key,
+        async (signal) => {
+          await ready
+          if (signal.aborted || disposed) throw new PublicError('视频任务已取消。')
+          const video = await provider.resolve(input, part, signal)
+          const canonical = JSON.stringify([video.site, video.id, video.part, preview])
+          if (canonicalJobs.has(canonical)) throw new PublicError('此视频已有任务正在处理，请稍后重试。')
+          canonicalJobs.add(canonical)
+          try {
+            let cover: Buffer | undefined
+            if (video.cover)
+              try {
+                const response = await request(video.cover, {
+                  ...provider.options(mediaHosts[video.site], signal),
+                  maxBytes: 2 * 1024 * 1024,
+                })
+                if (mediaKind(response.body) === 'image') cover = response.body
+              } catch {
+                /* A cover failure must not discard an otherwise usable video. */
+              }
+            if (signal.aborted || disposed) throw new PublicError('视频任务已取消。')
+            const description = [
+              h.text(
+                `${names[video.site]} · ${video.title}\n${video.author}${video.seconds ? ` · ${Math.round(video.seconds)} 秒` : ''}\n${video.url}`,
+              ),
+              ...(cover ? [h.image(cover, 'image/jpeg')] : []),
+            ]
+            const bytes = preview ? undefined : await media.prepare(video, signal)
+            if (signal.aborted || disposed) throw new PublicError('视频任务已取消。')
+            if (config.forward && s.platform === 'onebot') {
+              const nodes = [h('message', { userId: s.selfId, nickname: '视频解析' }, description)]
+              if (bytes)
+                nodes.push(
+                  h('message', { userId: s.selfId, nickname: '视频解析' }, h.video(bytes, 'video/mp4')),
+                )
+              await deliver(s, h('message', { forward: true }, nodes), config.timeout, signal)
+            } else {
+              await deliver(s, description, config.timeout, signal)
+              if (bytes) await deliver(s, h.video(bytes, 'video/mp4'), config.timeout, signal)
             }
-          if (signal.aborted || disposed) throw new PublicError('视频任务已取消。')
-          const description = [
-            h.text(
-              `${names[video.site]} · ${video.title}\n${video.author}${video.seconds ? ` · ${Math.round(video.seconds)} 秒` : ''}\n${video.url}`,
-            ),
-            ...(cover ? [h.image(cover, 'image/jpeg')] : []),
-          ]
-          const bytes = preview ? undefined : await media.prepare(video, signal)
-          if (signal.aborted || disposed) throw new PublicError('视频任务已取消。')
-          if (config.forward && s.platform === 'onebot') {
-            const nodes = [h('message', { userId: s.selfId, nickname: '视频解析' }, description)]
-            if (bytes)
-              nodes.push(
-                h('message', { userId: s.selfId, nickname: '视频解析' }, h.video(bytes, 'video/mp4')),
-              )
-            await deliver(s, h('message', { forward: true }, nodes), config.timeout, signal)
-          } else {
-            await deliver(s, description, config.timeout, signal)
-            if (bytes) await deliver(s, h.video(bytes, 'video/mp4'), config.timeout, signal)
+          } finally {
+            canonicalJobs.delete(canonical)
           }
-        } finally {
-          canonicalJobs.delete(canonical)
-        }
-      })
+        },
+        preview ? undefined : (signal) => ensureTools(signal),
+      )
       last.set(owner, Date.now())
       try {
         if (config.showProgress)
@@ -205,9 +217,22 @@ export function apply(ctx: Context, config: Config) {
     .command(config.command, '解析并发送三站视频', { authority: 0, checkArgCount: false })
     .option('part', '-p <part:posint>')
   root.subcommand('.诊断', '检查 ffmpeg 和 ffprobe 是否可运行', { authority: 0 }).action(async () => {
+    if (tools.installing)
+      return h.text(`${tools.status}\n正在自动准备媒体工具，就绪后排队中的视频会继续解析。`)
     try {
+      // Run repair in the background so diagnostics remain responsive on slow networks.
+      const result = ensureTools(undefined, true)
+      void result.catch((e) => {
+        if (!disposed) logger.warn(error(e))
+      })
+      const ready = await Promise.race([
+        result,
+        new Promise<undefined>((resolve) => setTimeout(resolve, 200)),
+      ])
       return h.text(
-        `视频依赖已就绪。\n${(await ensureTools(true)).join('\n')}\n默认发送：${config.forward ? '合并转发' : '普通消息'}`,
+        ready
+          ? `视频依赖已就绪。\n${ready.versions.join('\n')}\n默认发送：${config.forward ? '合并转发' : '普通消息'}`
+          : `${tools.status}\n自动准备中，可稍后再次发送“${config.command} 诊断”查看进度。`,
       )
     } catch (e) {
       return h.text(error(e))
@@ -258,12 +283,15 @@ export function apply(ctx: Context, config: Config) {
     if (result) await session.send(result)
   })
   ctx.setInterval(() => {
-    void media.clean().catch(() => ctx.logger(name).warn('视频缓存清理失败。'))
+    void media.clean().catch(() => {
+      if (!disposed) logger.warn('视频缓存清理失败。')
+    })
     const now = Date.now()
     for (const [id, time] of last) if (now - time > 60000) last.delete(id)
   }, 60000)
   ctx.on('dispose', async () => {
     disposed = true
+    await tools.close()
     await queue.close()
     last.clear()
   })

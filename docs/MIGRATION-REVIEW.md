@@ -12,7 +12,7 @@
 | 监听目的地 | yenai-plugin/apps/events/message.js、notice_group.js；lib/common/sendMsgMod.js；GroupEntry_Plugin/apps/notice.js | 椰奶发送给主人；GroupEntry 可发送管理群及 notifyUsers 私聊 | 独立 Notifications，不依赖 moderation、managedGroups 或 reviews；默认私聊管理员，也可配置多群和多私聊 |
 | 通知开关 | yenai-plugin/apps/admin/notice.js、config/default_config/notice.yaml | 区分群消息、撤回、邀请、成员、好友等，按默认 / Bot / 群保存；原配置多数默认 false | 按本次需求默认开启事件通知，指令按 Bot 默认 / 本群修改并持久保存；聊天正文单独开关 |
 | 群管默认状态 | yenai-plugin/config/default_config/groupAdmin.yaml；apps/groupAdmin；现有迁移 features / automation | 指令注册与各项规则配置分离，处罚依赖角色核验 | 去除必须填写管理群名单的默认门槛；命令全部注册，投票 / 头衔 / 验证默认可用；违禁词、定时、审核答案须有实际规则才能执行 |
-| 视频依赖 | rconsole-plugin/utils/ffmpeg-util.js、utils/bilibili.js | 下载与合流调用外部媒体工具 | README 首先给出容器安装命令；启动自检，缺失时在源站请求前失败，可通过诊断重新检测 |
+| 视频依赖 | rconsole-plugin/utils/ffmpeg-util.js、utils/bilibili.js | 下载与合流调用外部媒体工具 | 0.3.1 补充默认自动下载静态 ffmpeg/ffprobe，数据目录缓存、诊断进度和重试；工具就绪后才开始源站请求 |
 | 合并结果 | rconsole-plugin/apps/tools.js、相关三站工具；Koishi OneBot 6.9.4 MessageEncoder | 有媒体处理和合并消息逻辑，发送协议与 Yunzai 运行时耦合 | 使用 Koishi message-forward 节点，由官方适配器编码为群聊 / 私聊 forward API，包含说明与视频；默认开启 |
 | 作者与分发 | 四库 README、package.json 和 LICENSE | 各原项目分别保留作者与许可证；GroupEntry 快照无 LICENSE | 三个包统一改为 yunzai-*；每包 README、usage、THIRD_PARTY_NOTICES 和对应许可原文均可独立查看 |
 

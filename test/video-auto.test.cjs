@@ -163,7 +163,7 @@ test('malformed and oversized share cards are ignored without executing any cont
   assert.equal(globalThis.bad, undefined)
 })
 
-test('missing ffmpeg and ffprobe fail before any source or media request and diagnostics name both tools', async () => {
+test('explicitly disabled automatic installation stops before source requests and explains how to enable it', async () => {
   const fork = app.plugin((ctx) =>
     plugin.apply(
       ctx,
@@ -171,6 +171,7 @@ test('missing ffmpeg and ffprobe fail before any source or media request and dia
         command: '依赖测试',
         autoParse: false,
         cooldown: 0,
+        autoInstall: false,
         ffmpeg: path.join(folder, 'missing-ffmpeg'),
         ffprobe: path.join(folder, 'missing-ffprobe'),
       }),
@@ -179,9 +180,9 @@ test('missing ffmpeg and ffprobe fail before any source or media request and dia
   try {
     const from = network.calls.length
     const result = await wire.command('#依赖测试 https://www.douyin.com/video/12345', 1001, 600)
-    assert.match(result.text, /依赖未就绪.*ffmpeg、ffprobe/)
+    assert.match(result.text, /依赖未就绪.*ffmpeg/)
     assert.equal(network.calls.length, from)
-    assert.match((await wire.command('#依赖测试 诊断', 1001, 600)).text, /apk add --no-cache ffmpeg/)
+    assert.match((await wire.command('#依赖测试 诊断', 1001, 600)).text, /autoInstall/)
   } finally {
     await fork.dispose()
   }

@@ -1,35 +1,24 @@
-# Yunzai 视频迁移解析 0.3.0
+# Yunzai 视频迁移解析 0.3.1
 
 功能来源：[rconsole-plugin](https://gitee.com/kyrzy0416/rconsole-plugin)（kyrzy0416 及 R-plugin 贡献者）。感谢原作者；这是 Koishi 迁移实现，具体来源及许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-包名 `koishi-plugin-yunzai-video-parser`，插件键 `yunzai-video-parser`。仅支持 **B站、抖音、小红书**，可单独安装。需要服务器安装 `ffmpeg` 和 `ffprobe`；配置项同名，可填写可执行文件路径。
+包名 `koishi-plugin-yunzai-video-parser`，插件键 `yunzai-video-parser`。仅支持 **B站、抖音、小红书**，可单独安装。缺少 `ffmpeg` / `ffprobe` 时插件默认自动下载并安装；已有工具直接复用，也可配置自定义路径。
 
 直接发链接、BV 号或 QQ JSON 分享卡片即可自动解析，无需“视频解析”或 Koishi 全局前缀。默认适用插件过滤范围内的群和私聊。只识别三站视频，没有匹配链接的消息交还其他插件。
 
 从 0.1.0 升级时，如果旧配置显式保留了 `autoParse: false`，请改为 `true` 或删掉该项以使用新默认值。原 `groups` 留空现在表示全部会话，可填写群号限定范围。
 
-## 先安装媒体依赖
+## 自动安装媒体工具
 
-必须安装在 **Koishi 实际运行的容器/环境内**。Alpine 容器执行：
+启用插件后先检查配置路径 / PATH 和已缓存的工具，缺少时自动下载到 `data/yunzai-video-parser/tools/`，无需 root 权限、系统包管理器或 npm postinstall。Yarn 禁用了依赖安装脚本也可使用。工具下载和解压使用 Node.js 自带能力，不要求预装 tar、unzip 或 xz。
 
-```sh
-apk add --no-cache ffmpeg
-ffmpeg -version
-ffprobe -version
-```
+首次准备在后台进行，不阻塞 Koishi 其它插件。视频进入队列等待安装完成，然后继续解析；安装时间不占视频处理时限。仅预览无需等待媒体工具。`视频解析 诊断` 查看安装进度或在失败后重新尝试，控制台日志也显示进度。
 
-Debian/Ubuntu 容器执行：
+每个下载最多自动重试 3 次，整个准备过程默认最多 10 分钟；下载失败不会开始源站视频请求。下载流与解压输出均限制大小，先检查文件格式和可执行版本，再启用新文件；缓存保存 SHA256，重启时发现损坏会重新下载。取消单个视频不取消其它任务共用的安装，卸载插件会终止下载并清理未完成文件。
 
-```sh
-apt-get update
-apt-get install -y ffmpeg
-ffmpeg -version
-ffprobe -version
-```
+固定下载源为 [eugeneware/ffmpeg-static 的 b6.1.1 发布](https://github.com/eugeneware/ffmpeg-static/releases/tag/b6.1.1)。支持 Linux x64/ARM64（静态构建，可用于 Alpine）、Windows x64、macOS x64/ARM64。其它平台可填写自行安装的工具路径。网络请求使用插件 `proxy`，也支持 HTTPS_PROXY / HTTP_PROXY。需要数据目录可写、足够磁盘空间及能访问发布源的网络。
 
-ffmpeg 软件包同时提供 ffprobe。安装后发送 `视频解析 诊断`；不在 PATH 时填写两个可执行文件路径。插件启动时自动检查，缺失时在解析和下载前给出具体提示，避免只发出标题后才失败。仅查看预览不需要媒体工具。
-
-容器内临时安装会在重建容器时丢失；长期部署请把对应安装步骤加入当前 Koishi 镜像的 Dockerfile，然后重建镜像。这里提供安装方式，不会由插件擅自执行系统包管理命令。
+Docker 将 Koishi 的 data 目录持久化后，重建容器仍可复用已下载工具。工具的原许可、来源信息和哈希记录一同保存在工具目录内，版权不被本插件 MIT 许可替代。
 
 ## 默认合并消息
 
@@ -59,6 +48,8 @@ ffmpeg 软件包同时提供 ffprobe。安装后发送 `视频解析 诊断`；�
 ## 配置
 
 - `autoParse`：默认开启；`groups` 为空时覆盖插件作用范围内的群与私聊，非空时只处理这些群。
+- `autoInstall`：默认开启，自动准备缺少的 ffmpeg/ffprobe。
+- `toolDownloadTimeout`：整个工具准备流程超时，默认 600000 毫秒。
 - `showProgress`：默认关闭，不发送排队和任务编号提示；开启后显示进度，任务仍可通过“视频解析 任务”查看。
 - `biliCookie`、`douyinCookie`、`xhsCookie`：可选登录态；不同账号和访问地区会影响可用性。
 - `maxHeight`：默认 720，表示短边像素上限；竖屏按宽度限制。源站可选流不足时可能转码或返回失败。

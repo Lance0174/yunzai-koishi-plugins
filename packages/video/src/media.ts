@@ -133,6 +133,21 @@ export interface MediaConfig {
   ffprobe: string
   maxHeight: 360 | 480 | 720 | 1080
 }
+export async function checkTool(name: 'ffmpeg' | 'ffprobe', executable: string, signal?: AbortSignal) {
+  const control = new AbortController()
+  const abort = () => control.abort()
+  signal?.addEventListener('abort', abort, { once: true })
+  if (signal?.aborted) abort()
+  const timer = setTimeout(abort, 5000)
+  try {
+    const output = (await tool(executable, ['-version'], control.signal, process.cwd())).toString()
+    if (!output.startsWith(`${name} version `)) throw new PublicError(`${name} 未返回有效版本信息。`)
+    return output.split(/\r?\n/)[0].slice(0, 180)
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', abort)
+  }
+}
 export async function checkTools(config: Pick<MediaConfig, 'ffmpeg' | 'ffprobe'>, timeout = 5000) {
   const control = new AbortController()
   const timer = setTimeout(() => control.abort(), timeout)

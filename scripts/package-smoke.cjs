@@ -6,7 +6,6 @@ const { execFileSync } = require('node:child_process')
 const { createRequire } = require('node:module')
 const { createHash } = require('node:crypto')
 const root = path.resolve(__dirname, '..')
-const version = require('../package.json').version
 const names = [
   'koishi-plugin-yunzai-group-manager',
   'koishi-plugin-yunzai-music-request',
@@ -68,6 +67,7 @@ async function child(directory, name) {
     if (name === names[2]) {
       assert.equal(plugin.Config({}).autoParse, true)
       assert.equal(plugin.Config({}).forward, true)
+      assert.equal(plugin.Config({}).autoInstall, true)
     }
     if (name === names[0]) {
       for (const suffix of ['黑名单', '白名单', '事件监听', '事件通知'])
@@ -101,6 +101,8 @@ async function main() {
     results = []
   try {
     for (const name of names) {
+      const folder = name === names[0] ? 'group-manager' : name === names[1] ? 'music' : 'video'
+      const version = require(path.join(root, 'packages', folder, 'package.json')).version
       const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'ember-package-'))
       directories.push(directory)
       await fs.writeFile(
