@@ -4,11 +4,13 @@
 
 | 包 | 版本 | 开发状态 | npm |
 | --- | --- | --- | --- |
-| koishi-plugin-yunzai-group-manager | 0.3.1 | 开发中，preview=true | 正在发布 |
+| koishi-plugin-yunzai-group-manager | 0.3.1 | 开发中，preview=true | 已发布并回读 |
 | koishi-plugin-yunzai-music-request | 0.3.0 | 普通发布 | 已发布并回读 |
-| koishi-plugin-yunzai-video-parser | 0.3.3 | 普通发布 | 正在发布 |
+| koishi-plugin-yunzai-video-parser | 0.3.3 | 普通发布 | 已发布并回读 |
 
-Koishi 市场索引状态在最终回读后记录。源码仓库为 [Lance0174/yunzai-koishi-plugins](https://github.com/Lance0174/yunzai-koishi-plugins)，GitHub Release 批次为 v0.3.3。
+已从 npm 回读三个版本、latest、中文说明与开发标记，并下载远端 tgz，三个 SHA256 均与本地最终安装包一致。
+
+Koishi 官方索引已收录三个最终版本，群管 preview=true、视频 preview=false，点歌无开发标记。核查时间：2026-09-12T18:06:17.084875+00:00；索引生成时间：Sat, 12 Sep 2026 18:05:26 GMT。源码仓库为 [Lance0174/yunzai-koishi-plugins](https://github.com/Lance0174/yunzai-koishi-plugins)，GitHub Release 批次为 v0.3.3。
 
 ## 发布内容
 
@@ -21,7 +23,7 @@ Koishi 市场索引状态在最终回读后记录。源码仓库为 [Lance0174/y
 - 三个 TypeScript 包构建通过，修正版两个实际 tgz 的 npm 发布 dry-run 通过。
 - 升级脚本现有 2 项回归测试通过；版本映射为群管 0.3.1、点歌 0.3.0、视频 0.3.3。
 - 逐文件核对保留作者、来源、许可证；仅群管使用开发预览标记。证据见 artifacts/development-marker-validation-0.3.3.json。
-- 前一代码提交 `4f74e3d0fe783efd0535516f0822c68abe9b373f` 的 [GitHub Actions](https://github.com/Lance0174/yunzai-koishi-plugins/actions/runs/34709628057) 已通过完整现有测试、打包以及三个独立 Koishi 4.18.11 安装。最终修订提交另行验证。
+- 最终代码提交 `72c8013f346ecaf01c4a8db0bad4d8f7ba7a2f96` 的 [GitHub Actions](https://github.com/Lance0174/yunzai-koishi-plugins/actions/runs/34710044129) 已通过 **97/97 测试，0 失败、0 跳过**，三个包构建、打包及独立 Koishi 4.18.11 安装全部通过。发布提交只补充本文和 DEVELOPMENT.md 的验证记录，运行源码、依赖、脚本与此 CI 提交相同。
 - 本地此前新视频包独立安装及完整 97/97 测试证据，见 [0.3.1 开发报告](history/DEVELOPMENT-0.3.1.md)；不将这些历史测试表述为本次新运行。
 
 | 最终安装包 | SHA256 |
@@ -45,7 +47,7 @@ yarn add koishi-plugin-yunzai-group-manager@0.3.1 koishi-plugin-yunzai-music-req
 
 GitHub 源码首次直连推送未能连接 github.com:443，改为单次 git 命令使用已配置的本机代理后成功；没有修改全局网络设置。
 
-旧 npm 版本已经发布，开发状态修正使用新 patch 版本，随后核对 latest 指向，不覆盖或删除已发布版本。GitHub 最终 Release 只提供本表版本。
+旧 npm 版本已经发布，开发状态修正使用新 patch 版本，随后核对 latest 指向，不覆盖或删除已发布版本。GitHub [v0.3.3 Release](https://github.com/Lance0174/yunzai-koishi-plugins/releases/tag/v0.3.3) 只提供本表版本，附完整源码、迁移脚本、安装说明、发布清单和 SHA256SUMS。发布清单记录源码提交、CI 提交、npm 远端校验与市场索引证据。
 
 ## 验收范围
 
