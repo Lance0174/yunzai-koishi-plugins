@@ -46,6 +46,7 @@ OneBot 适配器把短数值 *_id 参数转成数字；SnowLuma 删除公告要�
 
 | 问题 | 修复或处理 |
 | --- | --- |
+| 用户复制 /path/ 占位路径，npm 报 ENOENT 并伴随 tarball corrupted 提示 | 改为先上传到实际 /koishi 环境、列出文件、再用相对路径安装；说明 Docker 宿主机/容器路径区别。只改文档，三个 tgz 未改变 |
 | 参考路径误写 apps/groupManage；后续读取不存在的安装与使用.md、平台索引及 Windows rg 路径通配失败 | 用 rg --files 定位 groupAdmin、安装说明.md 和真实证据路径 |
 | 新版第一次构建出现联合命令参数回调、事件类型、定时 Promise 回调类型不匹配 | 改为剩余参数、显式事件类型和 Promise<void>，构建通过 |
 | SQLite 报 cannot modify primary key，导致定时/投票/验证码测试失败 | 更新对象排除 id；新增事务、并发和重启测试，回归通过 |

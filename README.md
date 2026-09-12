@@ -12,16 +12,26 @@
 
 ## 安装
 
-Node.js 最低 18.20，推荐使用仍受支持的 Node LTS。保留现有 Koishi 和 OneBot 连接配置。在自己的 Koishi 项目目录中安装需要的包，路径换成收到的文件：
+Node.js 最低 18.20。
+
+先把需要的 `.tgz` 文件上传到 Koishi 当前运行环境的项目目录。当前终端显示 `/koishi`，以下以视频包已经放在该目录为例。Docker 容器内的路径与宿主机不同；仅上传到宿主机还不够，文件要在容器内可见。
+
+先确认文件存在：
 
 ```sh
-# Yarn 管理的 Koishi 项目：
-yarn add file:/path/koishi-plugin-ember-group-manager-0.2.0.tgz
-yarn add file:/path/koishi-plugin-ember-music-request-0.2.0.tgz
-yarn add file:/path/koishi-plugin-ember-video-parser-0.2.0.tgz
-
-# npm 管理的项目使用 npm install /path/相应文件.tgz
+cd /koishi
+ls -lh ./koishi-plugin-ember-video-parser-0.2.0.tgz
 ```
+
+只有上一步成功列出文件，再执行：
+
+```sh
+npm install ./koishi-plugin-ember-video-parser-0.2.0.tgz
+```
+
+原本使用 Yarn 的项目改用 `yarn add file:./koishi-plugin-ember-video-parser-0.2.0.tgz`。另外两个包同样先放入项目目录，再按需安装 `./koishi-plugin-ember-group-manager-0.2.0.tgz` 或 `./koishi-plugin-ember-music-request-0.2.0.tgz`。
+
+安装后重启 Koishi 并启用插件。旧示例的 `/path/` 是占位目录；`ENOENT` 表示指定路径下没有文件，伴随的 tarball corrupted 提示不能证明安装包损坏。当前版本尚未发布到 npm/市场。
 
 从 0.1.0 升级时，把旧视频配置的 `autoParse: false` 改成 `true`。重启 Koishi，在插件配置中启用对应插件。群管理需要已有 `database` 服务；视频处理需要服务器上的 `ffmpeg` 和 `ffprobe`。只启用点歌时无需数据库和 ffmpeg。
 
