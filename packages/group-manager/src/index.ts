@@ -10,7 +10,7 @@ import type { Host } from './support'
 export const name = 'yunzai-group-manager'
 export const inject = ['database']
 export const usage =
-  '日常群管默认在所有群可用，仍需真实群管理权限。事件监听和事件通知独立且默认开启，默认私聊 reviewers 中的管理员；可用“事件监听 开 --群 群号 --私聊 QQ”和“事件通知 关 成员变动”修改。黑名单忽略消息，白名单豁免处罚和验证。\n\n迁移来源：[yenai-plugin / yeyang52 及贡献者](https://github.com/yeyang52/yenai-plugin)、[GroupEntry_Plugin / A1Panda 及贡献者](https://github.com/A1Panda/GroupEntry_Plugin)。详见安装包 THIRD_PARTY_NOTICES.md。'
+  '**开发中 · 开发预览版本。** 群管理功能仍在完善。\n\n日常群管默认在所有群可用，仍需真实群管理权限。事件监听和事件通知独立且默认开启，默认私聊 reviewers 中的管理员；可用“事件监听 开 --群 群号 --私聊 QQ”和“事件通知 关 成员变动”修改。黑名单忽略消息，白名单豁免处罚和验证。\n\n迁移来源：[yenai-plugin / yeyang52 及贡献者](https://github.com/yeyang52/yenai-plugin)、[GroupEntry_Plugin / A1Panda 及贡献者](https://github.com/A1Panda/GroupEntry_Plugin)。详见安装包 THIRD_PARTY_NOTICES.md。'
 export { Config } from './config'
 import { Config } from './config'
 import { installFeatures } from './features'

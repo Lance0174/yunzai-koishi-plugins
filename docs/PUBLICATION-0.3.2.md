@@ -1,14 +1,16 @@
 # Koishi 插件市场发布记录 · 2026-09-13
 
-发布账号已通过 npm `whoami` 实时确认：`emberknight`。旧会话正式上传被拒绝后，现已通过 npm 官方网页刷新登录，正在完成本次发布的安全验证。群管理、点歌发布 0.3.0，视频发布 0.3.2，标注“开发中”。发布使用公共 npm registry 的 `latest` 标签；视频的开发状态由 `koishi.preview: true` 和可见说明表达。
+本文件保留初次发布过程。三个初版已成功发布到 npm 并回读校验，最终开发标记和 GitHub Release 版本见 [0.3.3 发布记录](PUBLICATION-0.3.3.md)，仅群管理开发中。
+
+发布账号已通过 npm `whoami` 实时确认：`emberknight`。旧会话正式上传被拒绝后，现已通过 npm 官方网页刷新登录，三个初版均已完成发布验证。群管理、点歌发布 0.3.0，视频发布 0.3.2，标注“开发中”。发布使用公共 npm registry 的 `latest` 标签；视频的开发状态由 `koishi.preview: true` 和可见说明表达。
 
 ## 发布状态
 
 | 插件 | 版本 | npm | Koishi 索引 |
 | --- | --- | --- | --- |
-| koishi-plugin-yunzai-group-manager | 0.3.0 | 发布命令已成功 | 待验证 |
-| koishi-plugin-yunzai-music-request | 0.3.0 | 待发布 | 待验证 |
-| koishi-plugin-yunzai-video-parser | 0.3.2 | 待发布 | 待验证；开发预览 |
+| koishi-plugin-yunzai-group-manager | 0.3.0 | 已发布并回读 | 待验证 |
+| koishi-plugin-yunzai-music-request | 0.3.0 | 已发布并回读 | 待验证 |
+| koishi-plugin-yunzai-video-parser | 0.3.2 | 已发布并回读 | 待验证；开发预览 |
 
 ## 视频开发标识
 
@@ -53,7 +55,7 @@ yarn add koishi-plugin-yunzai-group-manager@0.3.0 koishi-plugin-yunzai-music-req
 
 ## GitHub 发布
 
-源码仓库：[Lance0174/yunzai-koishi-plugins](https://github.com/Lance0174/yunzai-koishi-plugins)。已为三个 npm 包添加对应源码目录、README 和问题反馈链接。GitHub Actions 将在 Ubuntu / Node.js 22 上执行完整现有测试、打包与三个独立 Koishi 4.18.11 安装检查。源码先推送用于运行 CI；待三个 npm 包发布完成后发布 v0.3.2 Release。Actions 和 Release 的最终状态在实际完成后回填。
+源码仓库：[Lance0174/yunzai-koishi-plugins](https://github.com/Lance0174/yunzai-koishi-plugins)。已为三个 npm 包添加对应源码目录、README 和问题反馈链接。GitHub Actions 将在 Ubuntu / Node.js 22 上执行完整现有测试、打包与三个独立 Koishi 4.18.11 安装检查。源码先推送用于运行 CI；本批次随后更正开发标记并升级为 v0.3.3 Release，最终结果见对应发布记录。
 
 GitHub Release 将分别提供群管理与点歌 0.3.0、视频 0.3.2（开发中）、完整源码 ZIP、迁移脚本及 SHA256 校验文件。
 

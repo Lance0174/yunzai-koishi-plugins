@@ -1,4 +1,6 @@
-# Yunzai 群管理迁移 0.3.0
+# Yunzai 群管理迁移 0.3.1（开发中）
+
+> **开发中 · 开发预览版本。** 群管理功能仍在完善，Koishi 插件市场、包说明及控制台均标注开发状态。
 
 功能来源：[yenai-plugin](https://github.com/yeyang52/yenai-plugin)（yeyang52 / yeyang 及贡献者）、[GroupEntry_Plugin](https://github.com/A1Panda/GroupEntry_Plugin)（A1Panda / @A1_Panda 及贡献者）。感谢原作者；这是 Koishi 迁移实现，作者、对应模块与许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 

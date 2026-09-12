@@ -38,7 +38,10 @@ test('upgrade replaces missing legacy file dependencies, verifies new archives a
     assert.equal(fs.readFileSync(path.join(folder, 'package.json'), 'utf8'), original)
     for (const name of ['group-manager', 'music-request', 'video-parser'])
       fs.writeFileSync(
-        path.join(folder, `koishi-plugin-yunzai-${name}-${name === 'video-parser' ? '0.3.2' : '0.3.0'}.tgz`),
+        path.join(
+          folder,
+          `koishi-plugin-yunzai-${name}-${{ 'group-manager': '0.3.1', 'music-request': '0.3.0', 'video-parser': '0.3.3' }[name]}.tgz`,
+        ),
         'fixture',
       )
     fs.writeFileSync(
@@ -56,9 +59,9 @@ test('upgrade replaces missing legacy file dependencies, verifies new archives a
     assert.equal(result.dependencies['koishi-plugin-ember-video-parser'], undefined)
     assert.equal(
       result.dependencies['koishi-plugin-yunzai-video-parser'],
-      'file:./koishi-plugin-yunzai-video-parser-0.3.2.tgz',
+      'file:./koishi-plugin-yunzai-video-parser-0.3.3.tgz',
     )
-    assert.ok(fs.readdirSync(folder).some((name) => name.startsWith('koishi.yml.pre-0.3.2.')))
+    assert.ok(fs.readdirSync(folder).some((name) => name.startsWith('koishi.yml.pre-0.3.3.')))
   } finally {
     fs.rmSync(folder, { recursive: true, force: true })
   }
