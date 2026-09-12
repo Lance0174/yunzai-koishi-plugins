@@ -1,10 +1,10 @@
-// Run inside Koishi after uploading group/music 0.3.0 and video 0.3.1 tarballs.
+// Run inside Koishi after uploading group/music 0.3.0 and video 0.3.2 tarballs.
 // Keeps YAML formatting and comments; never prints configuration values.
 const fs = require('node:fs')
 const path = require('node:path')
 const names = ['group-manager', 'music-request', 'video-parser']
-const version = '0.3.1'
-const versions = { 'group-manager': '0.3.0', 'music-request': '0.3.0', 'video-parser': '0.3.1' }
+const version = '0.3.2'
+const versions = { 'group-manager': '0.3.0', 'music-request': '0.3.0', 'video-parser': '0.3.2' }
 
 function migrateYaml(content) {
   let plugin = '',

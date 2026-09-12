@@ -1,6 +1,6 @@
 # Yunzai → Koishi 功能迁移插件
 
-当前版本：群管理 / 点歌 0.3.0，视频解析 0.3.1（自动安装媒体工具）。
+当前版本：群管理 / 点歌 0.3.0，视频解析 0.3.2（开发中，自动安装媒体工具）。视频插件使用 Koishi 市场开发预览标记。
 
 感谢 [小飞 / xfdown](https://gitee.com/xfdown/xiaofei-plugin)、[R-plugin / kyrzy0416](https://gitee.com/kyrzy0416/rconsole-plugin)、[椰奶 / yeyang52](https://github.com/yeyang52/yenai-plugin)、[GroupEntry / A1Panda](https://github.com/A1Panda/GroupEntry_Plugin) 及各项目贡献者提供的原功能设计。这里是面向 Koishi 4.18.11、OneBot v11 / SnowLuma 的迁移实现。每个安装包均附作者、原仓库和许可证说明，Koishi 控制台也显示来源。
 
@@ -14,7 +14,16 @@
 
 ## 安装与升级
 
-将群管 / 点歌 0.3.0 和视频 0.3.1 的三个 tgz 及 `升级迁移.cjs` 放入 **Koishi 容器的 /koishi 目录**。媒体工具由视频插件自动安装。已安装旧版本的 Yarn 项目执行：
+在 Koishi 插件市场搜索 `yunzai-group-manager`、`yunzai-music-request`、`yunzai-video-parser`。视频是开发预览版本，如果市场设置隐藏了开发预览插件，请调整筛选条件。npm 发布后市场索引可能需要时间同步，发布和收录的实际状态见 [发布记录](docs/PUBLICATION-0.3.2.md)。
+
+也可以在 Koishi 项目目录用 Yarn 从 npm 安装或更新，无需上传 tgz：
+
+```sh
+cd /koishi
+yarn add koishi-plugin-yunzai-group-manager@0.3.0 koishi-plugin-yunzai-music-request@0.3.0 koishi-plugin-yunzai-video-parser@0.3.2
+```
+
+从旧 `ember-*` 插件迁移时，先使用下面的迁移脚本处理包名和配置键。离线安装或迁移时，将群管 / 点歌 0.3.0 和视频 0.3.2 的三个 tgz 及 `升级迁移.cjs` 放入 **Koishi 容器的 /koishi 目录**。媒体工具由视频插件自动安装。已安装旧版本的 Yarn 项目执行：
 
 ```sh
 cd /koishi
@@ -24,16 +33,16 @@ yarn install
 
 脚本只在本地修改 package.json 与 koishi.yml / koishi.yaml / koishi.json，先验证新安装包存在，再创建权限受限的备份。它替换包名及插件键、移除旧音乐 Cookie 和 managedGroups 字段；如果仍有缺失的图床插件 file 依赖，会替换为已发布的 0.1.2。保留 Koishi 4.18.11、auto-mas 和其它插件版本。`auto-mas@0.0.2` 的精确 peer 版本警告仍可能存在；安装过程统一使用 Yarn。
 
-新安装时：
+使用本地安装包新安装时：
 
 ```sh
 cd /koishi
-yarn add ./koishi-plugin-yunzai-group-manager-0.3.0.tgz ./koishi-plugin-yunzai-music-request-0.3.0.tgz ./koishi-plugin-yunzai-video-parser-0.3.1.tgz
+yarn add ./koishi-plugin-yunzai-group-manager-0.3.0.tgz ./koishi-plugin-yunzai-music-request-0.3.0.tgz ./koishi-plugin-yunzai-video-parser-0.3.2.tgz
 ```
 
 成功后重启 Koishi。群管理需要 database 服务；`reviewers` 填写管理员 QQ 以接收默认事件监听。点歌无需数据库，扫码权限通过 `loginAdmins` 或 Koishi 权限等级 4 及以上授予。源码中的升级脚本是 `scripts/upgrade.cjs`，交付包内提供中文文件名副本。
 
-已启用 yunzai 0.3.0 的用户只需更新视频包：`yarn add ./koishi-plugin-yunzai-video-parser-0.3.1.tgz`，然后重启 Koishi；首次缺工具时自动下载，无需先执行 apk 或 apt。
+已启用 yunzai 0.3.0 / 0.3.1 的用户只需更新视频包：`yarn add koishi-plugin-yunzai-video-parser@0.3.2`，然后重启 Koishi；首次缺工具时自动下载，无需先执行 apk 或 apt。
 
 完整参数和指令见各插件 README。[来源和许可](THIRD_PARTY_NOTICES.md)、[原逻辑对照](docs/MIGRATION-REVIEW.md)、[开发报告](DEVELOPMENT.md)。
 
@@ -48,4 +57,4 @@ npm run pack:all
 npm run test:packages
 ```
 
-媒体测试需要 PATH 中的 ffmpeg/ffprobe，也可设置 FFMPEG、FFPROBE。三个真实安装包分别安装到独立 Koishi 项目验收；报告区分本地协议、公开接口与真实 QQ 的验证范围。此次不自动连接用户服务器或发布 npm。
+媒体测试需要 PATH 中的 ffmpeg/ffprobe，也可设置 FFMPEG、FFPROBE。三个真实安装包分别安装到独立 Koishi 项目验收；报告区分本地协议、公开接口与真实 QQ 的验证范围。公开发布状态见 [发布记录](docs/PUBLICATION-0.3.2.md)。

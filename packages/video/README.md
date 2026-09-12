@@ -1,4 +1,6 @@
-# Yunzai 视频迁移解析 0.3.1
+# Yunzai 视频迁移解析 0.3.2（开发中）
+
+> **开发中 · 开发预览版本。** 抖音、小红书真实分享链接及 SnowLuma / QQ 视频播放仍在验收中，详见文末“验收状态”。Koishi 插件市场使用 `preview` 标记，说明、README 和控制台均显示开发状态。
 
 功能来源：[rconsole-plugin](https://gitee.com/kyrzy0416/rconsole-plugin)（kyrzy0416 及 R-plugin 贡献者）。感谢原作者；这是 Koishi 迁移实现，具体来源及许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 

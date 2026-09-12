@@ -8,7 +8,7 @@ import { MediaTools, ToolsConfig } from './tools'
 
 export const name = 'yunzai-video-parser'
 export const usage =
-  '缺少 ffmpeg/ffprobe 时默认自动下载安装到插件数据目录，无需执行系统安装命令。可用“视频解析 诊断”查看进度或重试。直接发送 B站、抖音、小红书链接或分享卡片即可解析，默认合并转发说明、封面和视频。\n\n迁移来源：[rconsole-plugin / kyrzy0416 及 R-plugin 贡献者](https://gitee.com/kyrzy0416/rconsole-plugin)。媒体工具来源：FFmpeg、eugeneware/ffmpeg-static 及其贡献者。详见安装包 THIRD_PARTY_NOTICES.md。'
+  '**开发中 · 开发预览版本。** 抖音、小红书真实分享链接及 SnowLuma / QQ 视频播放仍在验收中。\n\n缺少 ffmpeg/ffprobe 时默认自动下载安装到插件数据目录，无需执行系统安装命令。可用“视频解析 诊断”查看进度或重试。直接发送 B站、抖音、小红书链接或分享卡片即可解析，默认合并转发说明、封面和视频。\n\n迁移来源：[rconsole-plugin / kyrzy0416 及 R-plugin 贡献者](https://gitee.com/kyrzy0416/rconsole-plugin)。媒体工具来源：FFmpeg、eugeneware/ffmpeg-static 及其贡献者。详见安装包 THIRD_PARTY_NOTICES.md。'
 export interface Config extends ProviderConfig, MediaConfig, ToolsConfig {
   command: string
   autoParse: boolean
