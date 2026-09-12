@@ -22,10 +22,14 @@ export interface Config extends ProviderConfig {
   maxAudioMB: number
   maxConcurrent: number
   cooldown: number
+  output: 'card' | 'voice'
 }
 export const Config: Schema<Config> = Schema.object({
   command: Schema.string().default('点歌'),
   defaultPlatform: Schema.union(['netease', 'qq', 'kugou', 'kuwo']).default('netease'),
+  output: Schema.union(['card', 'voice'])
+    .default('card')
+    .description('选曲后的默认发送方式：音乐卡片或语音。'),
   pageSize: Schema.number().min(1).max(10).step(1).default(5),
   sessionMinutes: Schema.number().min(1).max(60).default(10),
   timeout: Schema.number().min(1000).max(60000).default(20000),
@@ -132,7 +136,7 @@ export function apply(ctx: Context, config: Config) {
           (t, i) =>
             `${(next - 1) * config.pageSize + i + 1}. ${t.title} — ${t.artist} [${titles[t.platform]}]`,
         )
-        .join('\n')}\n${config.command} 播放 <序号> / 歌词 <序号> / 下一页`,
+        .join('\n')}\n${config.command} 播放 <序号> / 卡片 <序号> / 语音 <序号> / 下一页，或直接回复序号`,
     )
   }
   async function search(s: Session, keyword: string, name?: string) {
@@ -158,7 +162,7 @@ export function apply(ctx: Context, config: Config) {
     return keyword
       ? search(session!, keyword, options?.platform)
       : h.text(
-          `${config.command} <关键词> -p 网易云/QQ/酷狗/酷我\n${config.command} 播放 1 / 歌词 1 / 下载 1 / 下一页 / 取消`,
+          `${config.command} <关键词> -p 网易云/QQ/酷狗/酷我\n回复序号选歌，或使用：${config.command} 卡片 1 / 语音 1 / 歌词 1 / 下一页 / 取消`,
         )
   })
   command('搜索 <keyword:text>', '搜索歌曲')
@@ -182,17 +186,43 @@ export function apply(ctx: Context, config: Config) {
         return error(e)
       }
     })
-  for (const download of [false, true])
-    command(download ? '下载 <index:posint>' : '播放 <index:posint>', '发送所选歌曲')
+  for (const mode of ['播放', '卡片', '语音'] as const)
+    command(`${mode} <index:posint>`, '发送音乐卡片或语音')
       .option('quality', '-q <quality:string>')
       .option('card', '--卡片')
+      .option('voice', '--语音')
       .action(({ session, options }, index) =>
         job(session!, async (signal) => {
+          if (options?.card && options?.voice) throw new PublicError('请选择音乐卡片或语音中的一种。')
+          const output = options?.card
+            ? 'card'
+            : options?.voice
+              ? 'voice'
+              : mode === '卡片'
+                ? 'card'
+                : mode === '语音'
+                  ? 'voice'
+                  : config.output
           const s = session!,
-            track = selected(s, index),
-            play = await provider.resolve(track, quality(options?.quality), signal)
+            track = selected(s, index)
+          if (
+            output === 'card' &&
+            s.platform === 'onebot' &&
+            (track.platform === 'netease' || (track.platform === 'qq' && track.shareId))
+          ) {
+            await send(
+              s,
+              h('onebot:music', {
+                type: track.platform === 'netease' ? '163' : 'qq',
+                id: track.shareId || track.id,
+              }),
+              signal,
+            )
+            return
+          }
+          const play = await provider.resolve(track, quality(options?.quality), signal)
           if (signal.aborted || disposed) throw new PublicError('音乐任务已取消。')
-          if (options?.card) {
+          if (output === 'card') {
             if (s.platform !== 'onebot') return h.text(`${track.title} — ${track.artist}\n${track.link}`)
             await send(
               s,
@@ -216,19 +246,9 @@ export function apply(ctx: Context, config: Config) {
             throw new PublicError('音源返回了非音频内容，可能需要重新登录或没有播放权限。')
           if (signal.aborted || disposed) throw new PublicError('音乐任务已取消。')
           const title = `${track.title} — ${track.artist}（${play.quality}）`
-          const extension = play.mime === 'audio/flac' ? 'flac' : play.mime === 'audio/mp4' ? 'm4a' : 'mp3'
           await send(s, h.text(`${title}\n${track.link}`), signal)
           if (signal.aborted || disposed) throw new PublicError('音乐任务已取消。')
-          const filename = `${track.title.replace(/[\\/:*?"<>|]/g, '_').slice(0, 80)}.${extension}`
-          // OneBot's file encoder asks the protocol server to download this checked URL.
-          // A data: URL is not a supported download_file input on all implementations.
-          const output =
-            download && s.platform === 'onebot'
-              ? h('file', { src: response.url, title: filename })
-              : download
-                ? h.file(response.body, play.mime, { title: filename })
-                : h.audio(response.body, play.mime)
-          await send(s, output, signal)
+          await send(s, h.audio(response.body, play.mime), signal)
         }),
       )
   command('歌词 <index:posint>', '查看歌曲歌词').action(({ session }, index) =>
@@ -241,6 +261,13 @@ export function apply(ctx: Context, config: Config) {
     const control = jobs.get(sessionKey(session!))
     control?.abort()
     return control ? '已请求取消当前音乐任务。' : '当前没有音乐任务。'
+  })
+  ctx.middleware(async (session, next) => {
+    const token = session.content?.trim() ?? ''
+    if (!/^\d{1,2}$/.test(token) || session.userId === session.selfId) return next()
+    const current = states.get(sessionKey(session))
+    if (!current || current.expires <= Date.now() || !current.tracks[Number(token) - 1]) return next()
+    return session.execute(`${config.command}.播放 ${Number(token)}`)
   })
   ctx.setInterval(() => {
     const now = Date.now()

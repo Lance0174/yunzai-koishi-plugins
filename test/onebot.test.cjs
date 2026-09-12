@@ -56,6 +56,18 @@ before(async () => {
           })),
         },
       }
+    if (call.url.hostname === 'u.y.qq.com')
+      return {
+        req: {
+          data: {
+            body: {
+              song: {
+                list: [{ id: 789, mid: '00abc', title: 'QQ歌曲', singer: [{ name: '歌手' }], interval: 100 }],
+              },
+            },
+          },
+        },
+      }
     if (call.url.pathname.includes('/lyric')) return { lrc: { lyric: '[00:01]这是歌词' } }
     if (call.url.hostname === 'www.iesdouyin.com')
       return (
@@ -81,6 +93,7 @@ before(async () => {
   })
   app.plugin(music, { pageSize: 2, cooldown: 0, timeout: 2000 })
   app.plugin(video, {
+    autoParse: false,
     cooldown: 0,
     timeout: 2000,
     ffmpeg: process.env.FFMPEG || 'ffmpeg',
@@ -192,17 +205,15 @@ test('mute duration reaches OneBot in seconds and cannot target protected roles 
   assert.match((await wire.command('群管理 解禁 2001', 1001, 600)).text, /平台已确认/)
   assert.equal(wire.actions.findLast((a) => a.action === 'set_group_ban').params.duration, 0)
 })
-test('dangerous moderation requires an actor-bound confirmation; cards are read back', async () => {
+test('kick executes directly without a confirmation and cards are read back', async () => {
   const before = mutationCount()
-  const preview = await wire.command('群管理 踢人 2001', 1001, 600)
-  const code = /执行 ([a-f0-9]{32})/.exec(preview.text)[1]
-  assert.equal(mutationCount(), before)
-  assert.match((await wire.command(`群管理 执行 ${code}`, 1003, 600)).text, /不属于当前用户/)
-  assert.match((await wire.command(`群管理 执行 ${code}`, 1001, 600)).text, /平台已确认/)
-  assert.match((await wire.command(`群管理 执行 ${code}`, 1001, 600)).text, /确认码无效/)
+  assert.match((await wire.command('群管理 踢人 2001', 1001, 600)).text, /平台已确认/)
+  assert.equal(mutationCount(), before + 1)
   assert.equal(wire.actions.filter((a) => a.action === 'set_group_kick').length, 1)
+  assert.equal(app.$commander.resolve('群管理.执行'), undefined)
   assert.match((await wire.command('群管理 名片 2001 新名片', 1001, 600)).text, /回读确认/)
 })
+
 test('explicit protocol failure and lost responses produce distinct terminal audit states', async () => {
   for (const [flag, failure, expected] of [
     ['fail', 100, 'failed'],
@@ -215,10 +226,8 @@ test('explicit protocol failure and lost responses produce distinct terminal aud
     wire.failures.delete('set_group_add_request')
   }
 })
-test('whole-group mute requires confirmation and quoted recalls cannot cross groups', async () => {
-  const preview = await wire.command('群管理 全员禁言 开', 1001, 600)
-  const code = /执行 ([a-f0-9]{32})/.exec(preview.text)[1]
-  await wire.command(`群管理 执行 ${code}`, 1001, 600)
+test('whole-group mute executes directly and quoted recalls cannot cross groups', async () => {
+  assert.match((await wire.command('群管理 全员禁言 开', 1001, 600)).text, /平台已确认/)
   assert.equal(wire.actions.findLast((a) => a.action === 'set_group_whole_ban').params.enable, true)
   await wire.command('群管理 全员禁言 关', 1001, 600)
   assert.equal(wire.actions.findLast((a) => a.action === 'set_group_whole_ban').params.enable, false)
@@ -257,24 +266,42 @@ test('song sessions isolate user/group; selection, paging and lyrics use real Ko
   assert.match((await wire.command('点歌 列表', 1001, null)).text, /会话已过期或不属于/)
 })
 test('audio and music card are encoded through the official OneBot adapter', async () => {
-  const audio = await wire.command('点歌 播放 1', 1001, 500, (n) =>
+  const audio = await wire.command('点歌 语音 1', 1001, 500, (n) =>
     n.params.message.some((s) => s.type === 'record'),
   )
   assert.ok(audio.params.message.find((s) => s.type === 'record').data.file.startsWith('base64://'))
   const card = await wire.command('点歌 播放 1 --卡片', 1001, 500, (n) =>
     n.params.message.some((s) => s.type === 'music'),
   )
-  assert.equal(card.params.message.find((s) => s.type === 'music').data.title, '歌曲1')
+  assert.equal(card.params.message.find((s) => s.type === 'music').data.type, '163')
+  assert.equal(String(card.params.message.find((s) => s.type === 'music').data.id), '1')
 })
-test('file download uses the protocol download_file and upload_group_file extensions', async () => {
+test('download command is absent and a numeric reply sends the default music card', async () => {
+  assert.equal(app.$commander.resolve('点歌.下载'), undefined)
   const before = wire.actions.length
-  await wire.command('点歌 下载 1')
-  const upload = await waitFor(() => wire.actions.slice(before).find((a) => a.action === 'upload_group_file'))
-  assert.equal(upload.params.name, '歌曲1.mp3')
-  assert.equal(upload.params.group_id, 500)
-  const download = wire.actions.slice(before).find((a) => a.action === 'download_file')
-  assert.ok(download.params.url.startsWith('https://music.163.com/'))
+  const card = await wire.command('2', 1001, 500, (n) => n.params.message.some((s) => s.type === 'music'))
+  assert.equal(String(card.params.message.find((s) => s.type === 'music').data.id), '2')
+  assert.equal(
+    wire.actions
+      .slice(before)
+      .some((a) => ['download_file', 'upload_group_file', 'upload_private_file'].includes(a.action)),
+    false,
+  )
 })
+
+test('QQ native cards use the numeric song id without fetching the audio source', async () => {
+  await wire.command('点歌 测试 -p QQ')
+  const from = fixture.calls.length
+  const sent = await wire.command('点歌 卡片 1', 1001, 500, (n) =>
+    n.params.message.some((s) => s.type === 'music'),
+  )
+  const card = sent.params.message.find((s) => s.type === 'music').data
+  assert.equal(card.type, 'qq')
+  assert.equal(String(card.id), '789')
+  assert.equal(fixture.calls.length, from)
+  assert.match((await wire.command('点歌 播放 1 --卡片 --语音')).text, /请选择/)
+})
+
 test('video command downloads, processes and emits an actual OneBot video segment', async () => {
   const sent = await wire.command('视频解析 https://www.douyin.com/video/12345', 1001, 500, (n) =>
     n.params.message.some((s) => s.type === 'video'),

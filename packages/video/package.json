@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-ember-video-parser",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Koishi B站、抖音、小红书视频解析与下载发送。",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",

@@ -9,8 +9,42 @@ export class ActionError extends Error {
     super(message)
   }
 }
+export interface Member {
+  user_id: string | number
+  role: string
+  card?: string
+  nickname?: string
+  title?: string
+  join_time?: number
+  last_sent_time?: number
+  shut_up_timestamp?: number
+  level?: string | number
+}
 export interface Internal {
-  getGroupMemberInfo(guild: string, user: string, fresh: boolean): Promise<{ role: string; card?: string }>
+  _get(action: string, params: Record<string, unknown>): Promise<unknown>
+  getGroupMemberInfo(guild: string, user: string, fresh: boolean): Promise<Member>
+  getGroupMemberList(guild: string): Promise<Member[]>
+  getGroupList(
+    fresh?: boolean,
+  ): Promise<{ group_id: number | string; group_name: string; member_count?: number }[]>
+  getGroupInfo(
+    guild: string,
+    fresh?: boolean,
+  ): Promise<{ group_name: string; member_count?: number; max_member_count?: number }>
+  setGroupAdmin(guild: string, user: string, enable: boolean): Promise<unknown>
+  setGroupSpecialTitle(guild: string, user: string, title: string, duration?: number): Promise<unknown>
+  setGroupName(guild: string, name: string): Promise<unknown>
+  setGroupPortrait(guild: string, file: string, cache?: number): Promise<unknown>
+  setGroupLeave(guild: string, dismiss?: boolean): Promise<unknown>
+  sendGroupNotice(guild: string, content: string): Promise<unknown>
+  getGroupNotice(guild: string): Promise<any[]>
+  delGroupNotice(guild: string, id: string): Promise<unknown>
+  setEssenceMsg(id: string): Promise<unknown>
+  deleteEssenceMsg(id: string): Promise<unknown>
+  getEssenceMsgList(guild: string): Promise<any[]>
+  getGroupHonorInfo(guild: string, type: string): Promise<any>
+  getGroupSignedList(guild: string): Promise<any>
+  getGroupSystemMsg(): Promise<any>
   getMsg(id: string): Promise<{
     group_id?: string | number
     message_type?: string

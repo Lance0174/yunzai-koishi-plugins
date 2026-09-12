@@ -7,7 +7,7 @@ import { Media, MediaConfig } from './media'
 
 export const name = 'ember-video-parser'
 export const usage =
-  '仅支持 B站、抖音、小红书。视频解析 <分享链接>；视频解析 预览 <链接>；视频解析 任务；视频解析 取消 <任务编号>。视频处理需要 ffmpeg 和 ffprobe。'
+  '直接发送 B站、抖音、小红书链接或分享卡片即可解析，不需要指令前缀。也可使用“视频解析 预览 <链接>”。服务器需要 ffmpeg 和 ffprobe。'
 export interface Config extends ProviderConfig, MediaConfig {
   command: string
   autoParse: boolean
@@ -16,11 +16,15 @@ export interface Config extends ProviderConfig, MediaConfig {
   queueSize: number
   jobTimeout: number
   cooldown: number
+  showProgress: boolean
 }
 export const Config: Schema<Config> = Schema.object({
   command: Schema.string().default('视频解析'),
-  autoParse: Schema.boolean().default(false).description('自动识别配置群中的分享链接。'),
-  groups: Schema.array(String).default([]).description('自动解析的群号；留空只响应手动指令。'),
+  autoParse: Schema.boolean().default(true).description('直接识别链接、BV 号和分享卡片，无需前缀。'),
+  groups: Schema.array(String)
+    .default([])
+    .description('限定自动解析的群号；留空适用当前插件作用范围内的群和私聊。'),
+  showProgress: Schema.boolean().default(false).description('显示任务编号和排队提示。默认直接发送解析结果。'),
   biliCookie: Schema.string().role('secret').default(''),
   douyinCookie: Schema.string().role('secret').default(''),
   xhsCookie: Schema.string().role('secret').default(''),
@@ -41,6 +45,29 @@ export const Config: Schema<Config> = Schema.object({
 })
 export const ownerKey = (s: Session) =>
   JSON.stringify([s.platform, s.selfId, s.guildId ?? '', s.channelId ?? '', s.userId ?? ''])
+export function shareText(session: Pick<Session, 'content' | 'elements'>) {
+  const elements = (session.elements ?? []).slice(0, 200)
+  const values = elements.length
+    ? elements.filter((e) => e.type === 'text').map((e) => String(e.attrs.content ?? '').slice(0, 65536))
+    : [(session.content ?? '').slice(0, 65536)]
+  for (const element of elements) {
+    if (!['json', 'onebot:json'].includes(element.type)) continue
+    const raw = element.attrs.data
+    if (typeof raw !== 'string' || raw.length > 65536) continue
+    try {
+      const pending: unknown[] = [JSON.parse(raw)]
+      for (let i = 0; i < pending.length && i < 2000; i++) {
+        const value = pending[i]
+        if (typeof value === 'string') values.push(value)
+        else if (value && typeof value === 'object' && pending.length < 2000)
+          pending.push(...Object.values(value).slice(0, 200))
+      }
+    } catch {
+      /* Malformed cards are left for other plugins. */
+    }
+  }
+  return values.join('\n').slice(0, 131072)
+}
 export async function deliver(s: Session, content: h.Fragment, timeout: number, signal: AbortSignal) {
   if (signal.aborted) throw new PublicError('视频任务已取消。')
   let timer: ReturnType<typeof setTimeout> | undefined, abort: (() => void) | undefined
@@ -72,12 +99,13 @@ export function apply(ctx: Context, config: Config) {
   const canonicalJobs = new Set<string>()
   let disposed = false
   const error = (e: unknown) => (e instanceof PublicError ? e.message : '视频处理失败，请稍后再试。')
-  async function run(s: Session, content: string, preview: boolean, part: number) {
+  async function run(s: Session, content: string, preview: boolean, part: number, automatic = false) {
     if (disposed || !s.userId || !s.channelId) return '当前会话不可用。'
     const input = identify(content)
     if (!input) return '仅支持 B站、抖音、小红书的视频链接或 BV 号。'
     const owner = ownerKey(s)
-    if (Date.now() - (last.get(owner) ?? 0) < config.cooldown) return '操作过于频繁，请稍后再试。'
+    if (Date.now() - (last.get(owner) ?? 0) < config.cooldown)
+      return automatic ? undefined : '操作过于频繁，请稍后再试。'
     let ticket, release!: () => void
     const ready = new Promise<void>((resolve) => {
       release = resolve
@@ -127,12 +155,13 @@ export function apply(ctx: Context, config: Config) {
       })
       last.set(owner, Date.now())
       try {
-        await deliver(
-          s,
-          `视频任务 ${ticket.id} 已加入队列；可用“${config.command} 取消 ${ticket.id}”取消。`,
-          config.timeout,
-          ticket.control.signal,
-        )
+        if (config.showProgress)
+          await deliver(
+            s,
+            `视频任务 ${ticket.id} 已加入队列；可用“${config.command} 取消 ${ticket.id}”取消。`,
+            config.timeout,
+            ticket.control.signal,
+          )
       } catch (e) {
         queue.cancel(ticket.id, owner)
         release()
@@ -143,7 +172,10 @@ export function apply(ctx: Context, config: Config) {
       await ticket.done
       return
     } catch (e) {
-      if (!disposed) return h.text(`${ticket ? `任务 ${ticket.id}：` : ''}${error(e)}\n原链接：${input.url}`)
+      if (!disposed)
+        return h.text(
+          `${ticket && config.showProgress ? `任务 ${ticket.id}：` : ''}${error(e)}\n原链接：${input.url}`,
+        )
     }
   }
   const root = ctx
@@ -181,16 +213,16 @@ export function apply(ctx: Context, config: Config) {
       queue.cancel(id, ownerKey(session!)) ? '已请求取消任务。' : '任务已结束、无效或不属于当前会话。',
     )
   ctx.middleware(async (session, next) => {
+    const content = shareText(session)
     if (
       !config.autoParse ||
-      !session.guildId ||
-      !config.groups.includes(session.guildId) ||
+      (config.groups.length > 0 && (!session.guildId || !config.groups.includes(session.guildId))) ||
       session.userId === session.selfId ||
       session.content?.trim().startsWith(config.command) ||
-      !identify(session.content ?? '')
+      !identify(content)
     )
       return next()
-    const result = await run(session, session.content ?? '', false, 1)
+    const result = await run(session, content, false, 1, true)
     if (result) await session.send(result)
   })
   ctx.setInterval(() => {

@@ -12,6 +12,7 @@ export interface Track {
   cover: string
   link: string
   extra?: string
+  shareId?: string
 }
 export interface Play {
   url: string
@@ -189,6 +190,7 @@ export class Providers {
         return {
           platform: source,
           id: mid,
+          shareId: /^\d+$/.test(string(s.id ?? s.songid)) ? string(s.id ?? s.songid) : undefined,
           title: clean(s.title ?? s.songname ?? s.name),
           artist: list(s.singer)
             .map((a) => clean(a.name))

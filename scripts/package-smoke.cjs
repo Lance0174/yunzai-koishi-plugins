@@ -6,6 +6,7 @@ const { execFileSync } = require('node:child_process')
 const { createRequire } = require('node:module')
 const { createHash } = require('node:crypto')
 const root = path.resolve(__dirname, '..')
+const version = require('../package.json').version
 const names = [
   'koishi-plugin-ember-group-manager',
   'koishi-plugin-ember-music-request',
@@ -29,13 +30,24 @@ async function child(directory, name) {
     await app.start()
     const expected =
       name === names[0]
-        ? ['群管理.同意', '群管理.执行', '群管理.撤回']
+        ? [
+            '群管理.同意',
+            '群管理.踢人',
+            '群管理.定时禁言',
+            '群管理.投票禁言',
+            '群管理.入群验证',
+            '群管理.公告',
+            '群管理.撤回',
+          ]
         : name === names[1]
-          ? ['点歌.播放', '点歌.歌词', '点歌.取消']
+          ? ['点歌.播放', '点歌.卡片', '点歌.语音', '点歌.歌词', '点歌.取消']
           : ['视频解析.预览', '视频解析.任务', '视频解析.取消']
     for (let i = 0; i < 100 && !app.$commander.resolve(expected[0]); i++)
       await new Promise((resolve) => setTimeout(resolve, 10))
     expected.forEach((command) => assert.ok(app.$commander.resolve(command), command))
+    assert.equal(app.$commander.resolve('群管理.执行'), undefined)
+    assert.equal(app.$commander.resolve('点歌.下载'), undefined)
+    if (name === names[2]) assert.equal(plugin.Config({}).autoParse, true)
     if (name === names[0]) {
       const { Store } = requireAt(name + '/lib/store')
       const store = new Store(app.database)
@@ -81,7 +93,7 @@ async function main() {
         '--fetch-timeout=30000',
         '--fetch-retries=1',
         'koishi@4.18.11',
-        path.join(root, 'artifacts/packages', `${name}-0.1.0.tgz`),
+        path.join(root, 'artifacts/packages', `${name}-${version}.tgz`),
       ]
       if (name === names[0]) args.push('@koishijs/plugin-database-sqlite@4.7.0')
       if (process.env.PROBE_PROXY)
@@ -99,8 +111,15 @@ async function main() {
         timeout: 30000,
       })
       console.log(output.trim())
-      const packedBytes = await fs.readFile(path.join(root, 'artifacts/packages', `${name}-0.1.0.tgz`))
-      results.push({ name, koishi: '4.18.11', node: process.version, result: 'passed', independent: true, sha256: createHash('sha256').update(packedBytes).digest('hex') })
+      const packedBytes = await fs.readFile(path.join(root, 'artifacts/packages', `${name}-${version}.tgz`))
+      results.push({
+        name,
+        koishi: '4.18.11',
+        node: process.version,
+        result: 'passed',
+        independent: true,
+        sha256: createHash('sha256').update(packedBytes).digest('hex'),
+      })
     }
     await fs.writeFile(
       path.join(root, 'artifacts/package-smoke.json'),

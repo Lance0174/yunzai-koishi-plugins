@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-ember-music-request",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Koishi 四平台点歌、选曲、歌词与音频发送。",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",

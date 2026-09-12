@@ -173,7 +173,7 @@ export class Store {
     readonly db: Context['database'],
     readonly now = Date.now,
   ) {}
-  private atomic<T>(run: (db: Context['database']) => Promise<T>): Promise<T> {
+  atomic<T>(run: (db: Context['database']) => Promise<T>): Promise<T> {
     const result = writes.then(() => this.db.transact(run)) as Promise<T>
     writes = result.catch(() => {})
     return result

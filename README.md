@@ -1,14 +1,14 @@
 # Ember Koishi 插件套件
 
-三个独立的 Koishi 4 插件，当前版本 **0.1.0**，目标环境为 Koishi 4.18.11、官方 OneBot v11 适配器和 SnowLuma。每个插件可以单独安装。
+三个独立的 Koishi 4 插件，当前版本 **0.2.0**，目标环境为 Koishi 4.18.11、官方 OneBot v11 适配器和 SnowLuma。每个插件可以单独安装。
 
-| 插件 | npm 包名 | 基础版内容 |
+| 插件 | npm 包名 | 当前内容 |
 | --- | --- | --- |
-| [群管理](packages/group-manager/README.md) | `koishi-plugin-ember-group-manager` | 群邀请/成员申请审核、事件通知、基础群管 |
-| [点歌](packages/music/README.md) | `koishi-plugin-ember-music-request` | 网易云、QQ音乐、酷狗、酷我搜索、选曲、歌词、音频/卡片/下载 |
-| [视频解析](packages/video/README.md) | `koishi-plugin-ember-video-parser` | 仅 B站、抖音、小红书；预览、视频下载、合流/转码、发送和取消 |
+| [群管理](packages/group-manager/README.md) | `koishi-plugin-ember-group-manager` | 群审核、日常群管、公告精华、定时任务、规则、投票与入群验证 |
+| [点歌](packages/music/README.md) | `koishi-plugin-ember-music-request` | 网易云、QQ音乐、酷狗、酷我搜索、选曲、歌词、音乐卡片/语音 |
+| [视频解析](packages/video/README.md) | `koishi-plugin-ember-video-parser` | 仅 B站、抖音、小红书；默认直接识别链接/分享卡片、视频发送、预览和取消 |
 
-这是首个本地验收版。三个 npm 名称在 2026-09-12 查询均为未注册；**本次没有发布到 npm、Koishi 市场或 GitHub**。用下文的 tarball 安装方式测试，不要按市场已上架处理。
+0.2.0 针对实际使用流程整改：日常禁言/踢人/全员禁言直接执行，新增常用短指令；视频默认无前缀自动解析；点歌支持数字选曲，只提供卡片/语音，不再提供下载命令。本版本提供源码和三个可独立安装的包，尚未推送或发布。
 
 ## 安装
 
@@ -16,14 +16,14 @@ Node.js 最低 18.20，推荐使用仍受支持的 Node LTS。保留现有 Koish
 
 ```sh
 # Yarn 管理的 Koishi 项目：
-yarn add file:/path/koishi-plugin-ember-group-manager-0.1.0.tgz
-yarn add file:/path/koishi-plugin-ember-music-request-0.1.0.tgz
-yarn add file:/path/koishi-plugin-ember-video-parser-0.1.0.tgz
+yarn add file:/path/koishi-plugin-ember-group-manager-0.2.0.tgz
+yarn add file:/path/koishi-plugin-ember-music-request-0.2.0.tgz
+yarn add file:/path/koishi-plugin-ember-video-parser-0.2.0.tgz
 
 # npm 管理的项目使用 npm install /path/相应文件.tgz
 ```
 
-重启 Koishi，在插件配置中启用对应插件。群管理需要已有 `database` 服务；视频处理需要服务器上的 `ffmpeg` 和 `ffprobe`。只启用点歌时无需数据库和 ffmpeg。
+从 0.1.0 升级时，把旧视频配置的 `autoParse: false` 改成 `true`。重启 Koishi，在插件配置中启用对应插件。群管理需要已有 `database` 服务；视频处理需要服务器上的 `ffmpeg` 和 `ffprobe`。只启用点歌时无需数据库和 ffmpeg。
 
 最少配置：
 
@@ -35,6 +35,7 @@ plugins:
     managedGroups: ['允许群管的群号']
   ember-music-request: {}
   ember-video-parser:
+    autoParse: true
     ffmpeg: ffmpeg
     ffprobe: ffprobe
 ```
@@ -70,4 +71,4 @@ node scripts/live-video.cjs
 
 上述实时检查可临时设置 `PROBE_PROXY`；代理、Cookie 不写入源码或证据文件。网络变化、登录权限和地区限制会影响结果。
 
-高级群管、音乐推荐/云盘及评论卡片留在原包后续迭代，未作为已完成功能交付。参考仓库及独立实现边界见 [来源说明](THIRD_PARTY_NOTICES.md)。
+尚未实现的范围包括周期自动退群、反禁言/退群拉黑、幸运字符/星级/网页统计、音乐推荐/云盘和视频评论卡片。参考仓库及独立实现边界见 [来源说明](THIRD_PARTY_NOTICES.md)。

@@ -1,11 +1,48 @@
 {
-  "name": "koishi-plugin-ember-group-manager", "version": "0.1.0",
-  "description": "Koishi OneBot 群邀请审核、群事件通知和基础群管理。",
-  "main": "lib/index.js", "types": "lib/index.d.ts",
-  "files": ["lib", "README.md", "LICENSE", "CHANGELOG.md"], "license": "MIT",
-  "engines": { "node": ">=18.20" }, "keywords": ["koishi", "onebot", "group", "snowluma"],
-  "peerDependencies": { "koishi": "^4.18.11" },
-  "scripts": { "build": "tsc -p tsconfig.json", "prepack": "npm run build" },
-  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
-  "koishi": { "description": { "zh": "群邀请和成员申请审核、群事件通知、禁言/踢人/名片/撤回。" }, "service": { "required": ["database"] } }
+  "name": "koishi-plugin-ember-group-manager",
+  "version": "0.2.0",
+  "description": "Koishi OneBot 群审核、日常群管、公告精华、定时任务、投票、违禁词与入群验证。",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.20"
+  },
+  "keywords": [
+    "koishi",
+    "onebot",
+    "group",
+    "snowluma"
+  ],
+  "peerDependencies": {
+    "koishi": "^4.18.11"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "koishi": {
+    "description": {
+      "zh": "Koishi OneBot 群审核、日常群管、公告精华、定时任务、投票、违禁词与入群验证。"
+    },
+    "service": {
+      "required": [
+        "database"
+      ]
+    }
+  },
+  "dependencies": {
+    "https-proxy-agent": "^7.0.6",
+    "ipaddr.js": "^2.5.0"
+  }
 }
