@@ -1,0 +1,7 @@
+node_modules/
+packages/*/lib/
+data/
+artifacts/
+.env
+*.log
+test-output/

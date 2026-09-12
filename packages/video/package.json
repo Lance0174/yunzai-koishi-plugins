@@ -1,0 +1,44 @@
+{
+  "name": "koishi-plugin-ember-video-parser",
+  "version": "0.1.0",
+  "description": "Koishi B站、抖音、小红书视频解析与下载发送。",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.20"
+  },
+  "keywords": [
+    "koishi",
+    "video",
+    "bilibili",
+    "douyin",
+    "xiaohongshu"
+  ],
+  "peerDependencies": {
+    "koishi": "^4.18.11"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "koishi": {
+    "description": {
+      "zh": "仅解析 B站、抖音、小红书，支持预览、下载、合流、视频发送和任务取消。"
+    }
+  },
+  "dependencies": {
+    "https-proxy-agent": "^7.0.6",
+    "ipaddr.js": "^2.5.0"
+  }
+}

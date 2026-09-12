@@ -1,0 +1,24 @@
+{
+  "name": "ember-koishi-suite",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run build && node --test --test-concurrency=1 test/*.test.cjs",
+    "pack:all": "node scripts/pack.cjs",
+    "test:packages": "node scripts/package-smoke.cjs",
+    "format": "prettier --write \"packages/*/src/**/*.ts\" \"test/*.cjs\" \"scripts/*.cjs\""
+  },
+  "devDependencies": {
+    "@koishijs/plugin-database-sqlite": "^4.0.0",
+    "@koishijs/plugin-mock": "2.6.6",
+    "@types/node": "^22.0.0",
+    "koishi": "4.18.11",
+    "koishi-plugin-adapter-onebot": "6.9.4",
+    "prettier": "3.6.2",
+    "typescript": "^5.9.0"
+  }
+}
