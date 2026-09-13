@@ -23,9 +23,20 @@
 
 ## 发布状态
 
-源码和 CI 已完成。视频 0.3.4 的 npm 发布等待网页安全验证时返回 E404；随后回读 npm latest 仍为 0.3.3，0.3.4 不存在。Koishi 索引也仍是视频 0.3.3。GitHub v0.3.4 提供已验证的源码和安装包，独立于 npm 发布；发布记录的这个快照不表示市场已更新。
+视频 **0.3.4 已发布到 npm，Koishi 官方索引已收录**；群管 0.3.1 继续开发预览，点歌 0.3.0 和视频为普通发布。
 
-当前可从 Release 下载视频 tgz 放入 /koishi，执行 `yarn add ./koishi-plugin-yunzai-video-parser-0.3.4.tgz` 并重启。npm 完成发布后的更新命令：
+- npm 回读时间：2026-09-13T06:18:14.049563+00:00。已核对三个包的 latest、版本、来源说明与开发标记，并下载远端 tgz；SHA256 全部与本地最终安装包一致。
+- Koishi 索引回读时间：2026-09-13T06:21:09.697631+00:00；索引时间：Sun, 13 Sep 2026 06:17:36 GMT。三个版本全部收录，群管 preview=true、视频 preview=false。
+- [GitHub v0.3.4](https://github.com/Lance0174/yunzai-koishi-plugins/releases/tag/v0.3.4) 已公开发布，9 个附件全部实际下载并核对 SHA256，源码 ZIP、完整交付 ZIP 内的文件与嵌套校验通过。
+- 标签保留源代码提交 `14293ce3c41097522f513305dcbc96bc23908c97`；源码 ZIP 对应该标签。当前文档补充 npm 发布完成后的记录，Release 的安装说明和发布清单同步更新，三个 tgz 不变。
+
+| 安装包 | SHA256 |
+| --- | --- |
+| koishi-plugin-yunzai-group-manager@0.3.1 | `2ce3f893cdb7f1516f7a315df0a57fa4190246c2de6179f4ef0f44938e75405b` |
+| koishi-plugin-yunzai-music-request@0.3.0 | `acb82971d6e333924287f3289d9248aaa0a62e7fc37ff8425a0d5f1113082c8c` |
+| koishi-plugin-yunzai-video-parser@0.3.4 | `dea387efee75f763018a46d6964961caf8cebe660a4f85ecac3e8c3d9580ecce` |
+
+在 Koishi 项目目录更新视频：
 
 ```sh
 cd /koishi
@@ -40,7 +51,9 @@ yarn add koishi-plugin-yunzai-video-parser@0.3.4
 - Windows 真实下载遇到 ECONNRESET、无响应超时，重试结束仍保留压缩进度；代理路径 API 返回 403 限流。已通过单独请求确认失败发生于 TLS 建连阶段，未关闭证书校验或修改全局代理。
 - 审查辅助命令出现 Python GBK 无法输出 emoji，改用 `python -X utf8`；相对目录读错及 PowerShell 通配符 rg 路径错误，随后改为正确目录和 `-g` 过滤读取。宽范围检索命中压缩源码导致输出截断，未将截断内容作为已读完整源码的证据。
 
-- npm 网页发布验证等待返回 E404，已回读确认新版本不存在；账号登录此前有效，没有更改 2FA。后续重新生成本次发布验证链接。
+- npm 网页发布验证两次等待失效并返回 E404；后续发布 PUT 再次返回 E404，whoami/access 回读 E401 确认登录会话失效。刷新官方登录时首次 TLS ECONNRESET，重试成功；用户完成官方登录及本次发布的独立 2FA 后，0.3.4 发布成功。未更改或绕过账号安全设置。
 - gh 拉取 CI 状态与产物再次遇到 TLS 超时，首次未取得目录的后续读取失败；改用受认证的 Python HTTPS 请求下载，跨域重定向未携带 GitHub 凭据。
+
+- 官方市场索引的未压缩响应传输缓慢，停止本次只读获取，改用服务端支持的 gzip 响应，大小限制继续保留，完成最终索引核验。
 
 不把本地模拟或 GitHub CI 的结果称为用户真实 SnowLuma / QQ 验收；这次没有执行用户服务器操作或真实群管动作。
