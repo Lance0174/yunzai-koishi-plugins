@@ -1,4 +1,4 @@
-# Yunzai 视频迁移解析 0.3.3
+# Yunzai 视频迁移解析 0.3.4
 
 功能来源：[rconsole-plugin](https://gitee.com/kyrzy0416/rconsole-plugin)（kyrzy0416 及 R-plugin 贡献者）。感谢原作者；这是 Koishi 迁移实现，具体来源及许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
@@ -14,9 +14,11 @@
 
 首次准备在后台进行，不阻塞 Koishi 其它插件。视频进入队列等待安装完成，然后继续解析；安装时间不占视频处理时限。仅预览无需等待媒体工具。`视频解析 诊断` 查看安装进度或在失败后重新尝试，控制台日志也显示进度。
 
-每个下载最多自动重试 3 次，整个准备过程默认最多 10 分钟；下载失败不会开始源站视频请求。下载流与解压输出均限制大小，先检查文件格式和可执行版本，再启用新文件；缓存保存 SHA256，重启时发现损坏会重新下载。取消单个视频不取消其它任务共用的安装，卸载插件会终止下载并清理未完成文件。
+每个工具最多自动尝试 6 次，采用递增间隔并切换 GitHub 发布页与官方资产 API 入口，整个准备过程默认最多 10 分钟。连接中断时保留已下载的压缩分片；下一次重试、解析或 Koishi 重启后，使用 Range / If-Range 接着下载。服务器不支持续传、文件标识变化或分片损坏时自动重新下载。
 
-固定下载源为 [eugeneware/ffmpeg-static 的 b6.1.1 发布](https://github.com/eugeneware/ffmpeg-static/releases/tag/b6.1.1)。支持 Linux x64/ARM64（静态构建，可用于 Alpine）、Windows x64、macOS x64/ARM64。其它平台可填写自行安装的工具路径。网络请求使用插件 `proxy`，也支持 HTTPS_PROXY / HTTP_PROXY。需要数据目录可写、足够磁盘空间及能访问发布源的网络。
+压缩包必须与固定上游发布的大小和 SHA256 一致，完整下载后才解压，检查可执行格式和版本，再启用新文件。取消单个视频不取消其它任务共用的安装；卸载插件会终止下载、清理未完成的可执行文件，并保留可续传的压缩分片。已安装的工具仍会校验本地 SHA256，发现损坏自动修复。
+
+固定下载源为 [eugeneware/ffmpeg-static 的 b6.1.1 发布](https://github.com/eugeneware/ffmpeg-static/releases/tag/b6.1.1)。支持 Linux x64/ARM64（静态构建，可用于 Alpine）、Windows x64、macOS x64/ARM64。其它平台可填写自行安装的工具路径。网络请求使用插件 `proxy`，也支持 HTTPS_PROXY / HTTP_PROXY。两个入口均使用同一份官方文件，不依赖第三方镜像。网络恢复后可继续下载；若 GitHub 及其资产 CDN 全部不可达，仍需配置服务器可用的网络代理。需要数据目录可写、足够磁盘空间及能访问发布源的网络。
 
 Docker 将 Koishi 的 data 目录持久化后，重建容器仍可复用已下载工具。工具的原许可、来源信息和哈希记录一同保存在工具目录内，版权不被本插件 MIT 许可替代。
 

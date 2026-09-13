@@ -1,16 +1,16 @@
 import { promises as fs, createReadStream, createWriteStream } from 'node:fs'
 import path from 'node:path'
-import https from 'node:https'
-import { createHash } from 'node:crypto'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { createGunzip } from 'node:zlib'
 import { setTimeout as pause } from 'node:timers/promises'
-import { HttpsProxyAgent } from 'https-proxy-agent'
 import { checkTool, MediaConfig } from './media'
 import { PublicError } from './net'
 
-type ToolName = 'ffmpeg' | 'ffprobe'
+import { binaryRelease, binarySource as source, binaryAsset, ToolName } from './tool-assets'
+import { downloadArchive, clearArchive, DownloadError, hashFile } from './tool-download'
+
+export { binaryRelease } from './tool-assets'
 export interface ToolsConfig extends Pick<MediaConfig, ToolName> {
   autoInstall: boolean
   toolDownloadTimeout: number
@@ -21,10 +21,6 @@ export interface ToolSet {
   ffprobe: string
   versions: string[]
 }
-// Fixed upstream binary release; no user-supplied URL or package manager is executed.
-export const binaryRelease = 'b6.1.1'
-const source = `https://github.com/eugeneware/ffmpeg-static/releases/download/${binaryRelease}`
-const supported = new Set(['linux-x64', 'linux-arm64', 'win32-x64', 'darwin-x64', 'darwin-arm64'])
 const maxBinaryBytes = 200 * 1024 * 1024
 
 function cancelled(signal: AbortSignal) {
@@ -39,101 +35,44 @@ function waitFor<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
     promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort))
   })
 }
-async function hashFile(file: string) {
-  const hash = createHash('sha256')
-  for await (const chunk of createReadStream(file)) hash.update(chunk)
-  return hash.digest('hex')
+// Serialize writers sharing a cache directory across plugin instances in this process.
+const installs = new Map<string, Promise<void>>()
+async function withInstallLock<T>(key: string, signal: AbortSignal, action: () => Promise<T>): Promise<T> {
+  const previous = installs.get(key) || Promise.resolve()
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const tail = previous.then(() => gate)
+  installs.set(key, tail)
+  try {
+    await waitFor(previous, signal)
+    cancelled(signal)
+    return await action()
+  } finally {
+    // A cancelled waiter must not release the next writer before its predecessor.
+    void previous.then(release)
+    void tail.then(() => {
+      if (installs.get(key) === tail) installs.delete(key)
+    })
+  }
 }
 
-async function download(
-  value: string,
-  file: string,
-  proxy: string,
-  signal: AbortSignal,
-  progress: (bytes: number, total: number) => void,
-  redirects = 0,
-): Promise<void> {
-  cancelled(signal)
-  const url = new URL(value)
-  if (
-    url.protocol !== 'https:' ||
-    url.username ||
-    url.password ||
-    url.port ||
-    redirects > 5 ||
-    !(
-      url.hostname === 'github.com' ||
-      url.hostname.endsWith('.githubusercontent.com') ||
-      url.hostname === 'github-production-release-asset-2e65be.s3.amazonaws.com'
-    )
+async function extract(archive: string, file: string, signal: AbortSignal) {
+  let expanded = 0
+  const limit = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      expanded += chunk.length
+      callback(expanded > maxBinaryBytes ? new PublicError('媒体工具解压文件超过大小限制。') : null, chunk)
+    },
+  })
+  await pipeline(
+    createReadStream(archive),
+    createGunzip(),
+    limit,
+    createWriteStream(file, { flags: 'wx', mode: 0o600 }),
+    { signal },
   )
-    throw new PublicError('媒体工具下载地址不属于受信任的发布源。')
-  const agent = proxy ? new HttpsProxyAgent(proxy) : undefined
-  try {
-    const response = await new Promise<import('node:http').IncomingMessage>((resolve, reject) => {
-      const req = https.request(
-        {
-          protocol: 'https:',
-          hostname: url.hostname,
-          port: 443,
-          path: url.pathname + url.search,
-          method: 'GET',
-          agent,
-          signal,
-          headers: {
-            Host: url.host,
-            'User-Agent': 'koishi-yunzai-video-parser',
-            'Accept-Encoding': 'identity',
-          },
-        },
-        resolve,
-      )
-      req.setTimeout(30000, () => req.destroy(new Error('媒体工具下载长时间无响应。')))
-      req.once('error', reject)
-      req.end()
-    })
-    if ([301, 302, 303, 307, 308].includes(response.statusCode ?? 0) && response.headers.location) {
-      const location = new URL(response.headers.location, url).href
-      response.destroy()
-      return await download(location, file, proxy, signal, progress, redirects + 1)
-    }
-    if (response.statusCode !== 200) {
-      response.destroy()
-      throw new PublicError(`媒体工具下载失败（HTTP ${response.statusCode}）。`)
-    }
-    const total = Number(response.headers['content-length']) || 0
-    if (total > maxBinaryBytes) {
-      response.destroy()
-      throw new PublicError('媒体工具下载文件超过大小限制。')
-    }
-    let received = 0
-    const meter = new Transform({
-      transform(chunk: Buffer, _encoding, callback) {
-        received += chunk.length
-        if (received > maxBinaryBytes) return callback(new PublicError('媒体工具下载文件超过大小限制。'))
-        progress(received, total)
-        callback(null, chunk)
-      },
-    })
-    let expanded = 0
-    const expansionLimit = new Transform({
-      transform(chunk: Buffer, _encoding, callback) {
-        expanded += chunk.length
-        callback(expanded > maxBinaryBytes ? new PublicError('媒体工具解压文件超过大小限制。') : null, chunk)
-      },
-    })
-    await pipeline(
-      response,
-      meter,
-      createGunzip(),
-      expansionLimit,
-      createWriteStream(file, { flags: 'wx', mode: 0o600 }),
-      { signal },
-    )
-    if (!received || (total && received !== total)) throw new PublicError('媒体工具下载不完整。')
-  } finally {
-    agent?.destroy()
-  }
 }
 
 export class MediaTools {
@@ -173,7 +112,7 @@ export class MediaTools {
       })
       .catch((error) => {
         const detail = error instanceof PublicError ? error.message : '请检查网络代理和 data 目录写入权限。'
-        this.status = `媒体工具自动准备失败：${detail} 下次解析会重试，也可发送“视频解析 诊断”重试。`
+        this.status = `媒体工具自动准备失败：${detail} 已保留可续传的下载进度；下次解析会重试，也可发送“视频解析 诊断”重试。`
         throw new PublicError(this.status)
       })
       .finally(() => {
@@ -204,7 +143,7 @@ export class MediaTools {
         throw new PublicError(
           `视频依赖未就绪：${name}。已关闭自动安装，请启用 autoInstall 或配置有效的工具路径。`,
         )
-      if (!supported.has(this.platform))
+      if (!binaryAsset(name, this.platform))
         throw new PublicError(`暂不支持 ${this.platform} 自动安装，请配置本机 ffmpeg/ffprobe 路径。`)
       const installed = await this.install(name, signal)
       tools[name] = installed.file
@@ -228,11 +167,21 @@ export class MediaTools {
       cancelled(signal)
     }
   }
-  private async install(name: ToolName, signal: AbortSignal) {
+  private install(name: ToolName, signal: AbortSignal) {
+    return withInstallLock(path.join(this.root, name), signal, async () => {
+      const existing = await this.cached(name, signal)
+      return existing || this.installLocked(name, signal)
+    })
+  }
+  private async installLocked(name: ToolName, signal: AbortSignal) {
     await fs.mkdir(this.root, { recursive: true })
     const disk = await fs.statfs(this.root)
     if (disk.bavail * disk.bsize < maxBinaryBytes * 2)
       throw new PublicError('安装媒体工具所需磁盘空间不足（需要至少 400MB 可用空间）。')
+    const downloads = path.join(this.root, 'downloads')
+    await fs.mkdir(downloads, { recursive: true })
+    const archive = path.join(downloads, `${name}.gz.part`)
+    const asset = binaryAsset(name, this.platform)!
     const temporary = await fs.mkdtemp(path.join(this.root, `.${name}-`))
     const file = this.toolFile(temporary, name),
       url = `${source}/${name}-${this.platform}.gz`
@@ -246,30 +195,46 @@ export class MediaTools {
         ''
       for (let attempt = 1; ; attempt++) {
         cancelled(signal)
-        this.update(`正在自动下载 ${name}（${this.platform}，第 ${attempt}/3 次）。`)
+        this.update(`正在自动下载 ${name}（${this.platform}，第 ${attempt}/6 次）。`)
         let last = 0
         try {
-          await download(url, file, proxy, signal, (bytes, total) => {
-            if (Date.now() - last < 5000) return
-            last = Date.now()
-            this.update(
-              `正在自动下载 ${name}：${total ? Math.floor((bytes / total) * 100) + '%' : Math.round(bytes / 1048576) + 'MB'}。`,
-            )
-          })
+          await downloadArchive(
+            attempt % 2
+              ? url
+              : `https://api.github.com/repos/eugeneware/ffmpeg-static/releases/assets/${asset.id}`,
+            archive,
+            asset,
+            proxy,
+            signal,
+            (bytes, total) => {
+              if (Date.now() - last < 5000) return
+              last = Date.now()
+              this.update(
+                `正在自动下载 ${name}：${total ? Math.floor((bytes / total) * 100) + '%' : Math.round(bytes / 1048576) + 'MB'}。`,
+              )
+            },
+          )
           break
         } catch (error) {
-          await fs.rm(file, { force: true })
           cancelled(signal)
-          if (attempt === 3) throw error
+          if (attempt === 6 || (error instanceof DownloadError && !error.retryable)) throw error
           const reason =
             error instanceof PublicError ? error.message : (error as NodeJS.ErrnoException).code || '网络中断'
-          this.update(`${name} 下载未完成（${reason}），自动重试。`)
+          this.update(`${name} 下载未完成（${reason}），保留可续传进度并切换官方入口重试。`)
           try {
-            await pause(attempt * 1000, undefined, { signal })
+            await pause(Math.min(8000, 1000 * 2 ** (attempt - 1)), undefined, { signal })
           } catch {
             cancelled(signal)
           }
         }
+      }
+      this.update(`${name} 下载已通过 SHA256 校验，正在解压。`)
+      try {
+        await extract(archive, file, signal)
+      } catch (error) {
+        if (['Z_DATA_ERROR', 'Z_BUF_ERROR'].includes((error as NodeJS.ErrnoException).code || ''))
+          await clearArchive(archive)
+        throw error
       }
       const handle = await fs.open(file, 'r')
       const header = Buffer.alloc(4)
@@ -284,7 +249,10 @@ export class MediaTools {
           : process.platform === 'linux'
             ? header.toString('hex') === '7f454c46'
             : ['cffaedfe', 'feedfacf', 'cafebabe'].includes(header.toString('hex'))
-      if (!valid) throw new PublicError(`${name} 下载内容不是当前平台的可执行文件。`)
+      if (!valid) {
+        await clearArchive(archive)
+        throw new PublicError(`${name} 下载内容不是当前平台的可执行文件。`)
+      }
       await fs.chmod(file, 0o755)
       const version = await checkTool(name, file, signal)
       cancelled(signal)
@@ -292,6 +260,7 @@ export class MediaTools {
         name,
         release: binaryRelease,
         source: url,
+        archiveSha256: asset.sha256,
         version,
         bytes: (await fs.stat(file)).size,
         sha256: await hashFile(file),
@@ -306,11 +275,9 @@ export class MediaTools {
         `FFmpeg: https://ffmpeg.org/\nBinaries: ${source}\nBuild/source information: https://github.com/eugeneware/ffmpeg-static\nThis executable retains its own upstream license.\n`,
       )
       const destination = path.join(this.root, name)
-      // A second instance may have completed the same installation meanwhile.
-      const existing = await this.cached(name, signal)
-      if (existing) return existing
       await fs.rm(destination, { recursive: true, force: true })
       await fs.rename(temporary, destination)
+      await clearArchive(archive)
       this.update(`${name} 已自动安装并通过版本检查。`)
       return { file: this.toolFile(destination, name), version }
     } finally {

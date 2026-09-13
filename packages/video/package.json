@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-yunzai-video-parser",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "参考 R-plugin 的 Koishi B站、抖音、小红书解析迁移，自动安装媒体工具，默认合并转发。",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
