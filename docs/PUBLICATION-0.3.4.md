@@ -14,13 +14,18 @@
 
 - 本地全套测试 **107/107 通过，0 失败、0 跳过**，包含实际 ffmpeg 媒体处理与 OneBot 本地协议测试。
 - 下载器 19 项测试通过，覆盖中断流与真实分片写入、自动续传、重启续传、HTTP 200 忽略 Range、206 文件标识或范围不匹配、416、无校验标识、坏 SHA256、非可执行内容、实例并发、取消和卸载。
-- 三包构建与打包通过；群管、点歌 tgz 与上一发布的 SHA256 一致。视频最终包在发布前进行独立 Koishi 4.18.11 安装及 npm dry-run。
+- 三包构建与打包通过；群管、点歌 tgz 与上一发布的 SHA256 一致。三个最终 tgz 分别独立安装到 Koishi 4.18.11 均通过；视频最终包的 npm dry-run 通过。
 - 上游官方 API 和发布入口均实际返回相同资产的 HTTP 206，固定资产信息已核对。
-- 本机 Windows 真实安装尝试保留了 3,898,744 字节分片，但随后遇到持续 TLS 连接重置/超时；代理路径又遇到 GitHub API 403 限流。未将这次未完成下载写为真实安装成功。新增 Ubuntu / Node 22 CI 实际下载中断恢复及编码验收，结果在发布完成后补充。
+- 本机 Windows 真实安装尝试保留了 3,898,744 字节分片，但随后遇到持续 TLS 连接重置/超时；代理路径又遇到 GitHub API 403 限流。未将这次未完成下载写为真实安装成功。Ubuntu / Node 22 的真实下载恢复已通过：保留 2,351,488 字节后主动中断，重启收到 HTTP 206（bytes 2351488-29354985/29354986），完成两工具的固定 SHA256 校验及真实 H.264/AAC 编码、ffprobe 校验。
+
+- [GitHub CI 34738577854](https://github.com/Lance0174/yunzai-koishi-plugins/actions/runs/34738577854) 已在提交 `a465723698fc53a50c89196daabac8148381ad98` 通过 107/107 测试、真实下载恢复、打包及三个独立 Koishi 安装。
+- CI 与本地视频包逐文件比较，差异仅 package.json、README、CHANGELOG 的 LF/CRLF 换行；所有运行代码一致。发布使用已通过本地独立安装的最终 tgz，并以该文件校验 npm 与 Release。
 
 ## 发布状态
 
-源码、CI、npm、Koishi 索引和 GitHub Release 正在完成，最终记录以发布后的回读结果为准。安装目标：
+源码和 CI 已完成。视频 0.3.4 的 npm 发布等待网页安全验证时返回 E404；随后回读 npm latest 仍为 0.3.3，0.3.4 不存在。Koishi 索引也仍是视频 0.3.3。GitHub v0.3.4 提供已验证的源码和安装包，独立于 npm 发布；发布记录的这个快照不表示市场已更新。
+
+当前可从 Release 下载视频 tgz 放入 /koishi，执行 `yarn add ./koishi-plugin-yunzai-video-parser-0.3.4.tgz` 并重启。npm 完成发布后的更新命令：
 
 ```sh
 cd /koishi
@@ -33,6 +38,9 @@ yarn add koishi-plugin-yunzai-video-parser@0.3.4
 
 - 本次 gh 读取上游发布信息遇到 TLS handshake timeout 和 EOF，换 Python HTTPS 读取成功，未根据失败响应猜测资产 ID。
 - Windows 真实下载遇到 ECONNRESET、无响应超时，重试结束仍保留压缩进度；代理路径 API 返回 403 限流。已通过单独请求确认失败发生于 TLS 建连阶段，未关闭证书校验或修改全局代理。
-- 审查辅助命令出现 Python GBK 无法输出 emoji，改用 `python -X utf8`；两次相对目录读错及一次 PowerShell 通配符 rg 路径错误，随后改为正确目录和 `-g` 过滤读取。宽范围检索命中压缩源码导致输出截断，未将截断内容作为已读完整源码的证据。
+- 审查辅助命令出现 Python GBK 无法输出 emoji，改用 `python -X utf8`；相对目录读错及 PowerShell 通配符 rg 路径错误，随后改为正确目录和 `-g` 过滤读取。宽范围检索命中压缩源码导致输出截断，未将截断内容作为已读完整源码的证据。
+
+- npm 网页发布验证等待返回 E404，已回读确认新版本不存在；账号登录此前有效，没有更改 2FA。后续重新生成本次发布验证链接。
+- gh 拉取 CI 状态与产物再次遇到 TLS 超时，首次未取得目录的后续读取失败；改用受认证的 Python HTTPS 请求下载，跨域重定向未携带 GitHub 凭据。
 
 不把本地模拟或 GitHub CI 的结果称为用户真实 SnowLuma / QQ 验收；这次没有执行用户服务器操作或真实群管动作。
