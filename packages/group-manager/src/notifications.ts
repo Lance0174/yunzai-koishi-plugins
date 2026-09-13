@@ -133,27 +133,56 @@ export class Notifications {
       pending.add(work)
       return work
     }
-    const events: [string, Topic, string][] = [
-      ['guild-added', '群聊变动', '机器人加入群聊'],
-      ['guild-deleted', '群聊变动', '机器人退群/被移出'],
-      ['guild-member-added', '成员变动', '成员加入'],
-      ['guild-member-deleted', '成员变动', '成员退出/被移出'],
-      ['friend-added', '好友变动', '新增好友'],
-      ['friend-deleted', '好友变动', '删除好友'],
-      ['friend-request', '好友申请', '收到好友申请'],
-      ['guild-request', '群邀请', '收到机器人群邀请'],
-      ['guild-member-request', '入群申请', '收到成员入群申请'],
+    // The adapter stores the raw OneBot payload on session.onebot; detail text
+    // keeps the original topic words so switch filtering and tests stay stable.
+    const raw = (s: Session) => ((s as any).onebot ?? {}) as Record<string, any>
+    const operator = (s: Session) =>
+      s.operatorId && s.operatorId !== s.userId ? `（操作人 ${s.operatorId}）` : ''
+    const events: [string, Topic, (s: Session) => string][] = [
+      ['guild-added', '群聊变动', () => '机器人加入群聊'],
+      ['guild-deleted', '群聊变动', (s) => (raw(s).sub_type === 'kick_me' ? '机器人被移出群聊' : '机器人退群/被移出')],
+      [
+        'guild-member-added',
+        '成员变动',
+        (s) => `成员加入${raw(s).sub_type === 'invite' ? '（受邀加入）' : '（申请通过）'}`,
+      ],
+      [
+        'guild-member-deleted',
+        '成员变动',
+        (s) => {
+          if (raw(s).sub_type === 'kick') return `成员被管理员移出${operator(s)}`
+          if (raw(s).sub_type === 'leave') return '成员主动退出'
+          return '成员退出/被移出'
+        },
+      ],
+      ['friend-added', '好友变动', () => '新增好友'],
+      ['friend-deleted', '好友变动', () => '删除好友'],
+      ['friend-request', '好友申请', () => '收到好友申请'],
+      ['guild-request', '群邀请', () => '收到机器人群邀请'],
+      ['guild-member-request', '入群申请', () => '收到成员入群申请'],
     ]
     for (const [event, topic, label] of events)
-      ctx.on(event as 'guild-added', (s) => run(() => this.receive(s, topic, label)))
+      ctx.on(event as 'guild-added', (s) =>
+        run(async () => {
+          // With reviews enabled the request flow sends coded notices to the same
+          // listener targets; the bare summary would only duplicate it.
+          if ((event === 'guild-request' || event === 'guild-member-request') && host.config.reviews)
+            return
+          await this.receive(s, topic, label(s))
+        }),
+      )
     ctx.on('guild-member' as 'guild-member-added', (s) =>
       run(async () => {
-        if (['role', 'ban'].includes(s.subtype))
-          await this.receive(
-            s,
-            s.subtype === 'ban' ? '禁言变动' : '管理员变动',
-            s.subtype === 'ban' ? '禁言状态变更' : '管理员变更',
-          )
+        if (s.subtype === 'ban') {
+          const detail =
+            raw(s).sub_type === 'lift_ban'
+              ? `被解除禁言${operator(s)}`
+              : `被禁言 ${raw(s).duration ?? '未知'} 秒${operator(s)}`
+          await this.receive(s, '禁言变动', `禁言状态变更：成员 ${s.userId ?? '未知'} ${detail}`)
+        } else if (s.subtype === 'role') {
+          const detail = raw(s).sub_type === 'set' ? '获得管理员' : '取消管理员'
+          await this.receive(s, '管理员变动', `管理员变更：成员 ${s.userId ?? '未知'} ${detail}`)
+        }
       }),
     )
     ctx.on('message-deleted', (s) =>
@@ -161,7 +190,7 @@ export class Notifications {
         this.receive(
           s,
           s.guildId ? '群撤回' : '好友撤回',
-          `${s.guildId ? '群' : '私聊'}消息撤回；消息 ${s.messageId || '未知'}`,
+          `${s.guildId ? '群' : '私聊'}消息撤回；消息 ${s.messageId || '未知'}；发送者 ${s.userId || '未知'}${operator(s)}`,
         ),
       ),
     )

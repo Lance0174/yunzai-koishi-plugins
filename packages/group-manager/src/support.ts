@@ -20,15 +20,27 @@ export interface Host {
     guild?: string,
     reviewer?: boolean,
   ): Promise<{ actor: Member; self: Member; member?: Member }>
+  masterPermission(
+    s: Session,
+    guild: string,
+    target?: string,
+  ): Promise<{ actor: Member; self: Member; member?: Member }>
   authorize(
     bot: Bot,
     guild: string,
     actor: string,
     target?: string,
+    mode?: 'member' | 'master',
   ): Promise<{ actor: Member; self: Member; member?: Member }>
-  perform(s: Session, action: string, target: string, run: () => Promise<unknown>): Promise<string>
+  perform(
+    s: Session,
+    action: string,
+    target: string,
+    run: () => Promise<unknown>,
+    guild?: string,
+  ): Promise<string>
   guard<T>(fn: () => Promise<T>): Promise<T | string>
-  requireReview(s: Session): void
+  requireReview(s: Session): Promise<void>
   flush(): Promise<void>
   notifyVerification(bot: Bot, guild: string, user: string, eventId: string): Promise<void>
 }
@@ -57,8 +69,8 @@ export async function quoteId(host: Host, s: Session) {
     throw new UserError('无法确认引用消息属于当前群。')
   return s.quote.id
 }
-export async function punishable(host: Host, state: State, s: Session, user: string) {
-  if (await host.lists.exempt(host.botKey(s.bot), s.guildId!, user))
+export async function punishable(host: Host, state: State, s: Session, user: string, guild = s.guildId!) {
+  if (await host.lists.exempt(host.botKey(s.bot), guild, user))
     throw new UserError('该成员在处罚豁免名单中。')
 }
 export function finiteTime(value: unknown): number | undefined {

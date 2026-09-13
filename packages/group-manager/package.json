@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-yunzai-group-manager",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "【开发中】参考椰奶及 GroupEntry 的 Koishi 群管与独立事件监听迁移。",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",

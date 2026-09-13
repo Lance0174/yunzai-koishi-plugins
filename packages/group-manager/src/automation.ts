@@ -5,6 +5,7 @@ import { State, DataRow } from './state'
 import { RequestRow, key } from './store'
 import { ActionError, duration, internal, timed, userId } from './onebot'
 import { UserError } from './errors'
+import { nextRecurring, parseRecur, recurLabel } from './schedule'
 
 export function scheduleTime(input: string, now = Date.now()) {
   if (/^\d+(s|m|h|d|秒|分|分钟|时|小时|天)$/.test(input)) return now + duration(input)
@@ -14,6 +15,16 @@ export function scheduleTime(input: string, now = Date.now()) {
   if (!Number.isFinite(due) || due <= now || due > now + 366 * 86400_000)
     throw new UserError('时间须在未来一年内。')
   return due
+}
+
+// Recurring rules (每日/每周) resolve to their first future occurrence; the task
+// re-queues itself after every run instead of terminating.
+export function parseWhen(input: string, now = Date.now()) {
+  if (/^(每日|每天|每周[一二三四五六日天])/.test(input.trim())) {
+    const recur = parseRecur(input)
+    return { recur, due: nextRecurring(recur, now) }
+  }
+  return { due: scheduleTime(input, now) }
 }
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const freshCode = () => randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase()
@@ -51,7 +62,7 @@ export function installAutomation(host: Host, state: State) {
   const defaultPolicy = (bot: string, guild: string, kind: string, actor: string): DataRow | undefined => {
     const payload =
       kind === 'vote-policy'
-        ? { votes: 3, ttl: 300000 }
+        ? { votes: 3, ttl: 300000, opposes: 3 }
         : kind === 'verify-policy'
           ? { ttl: 300000, kick: false }
           : undefined
@@ -183,21 +194,21 @@ export function installAutomation(host: Host, state: State) {
   for (const mute of [true, false])
     cmd(
       mute
-        ? '定时禁言 <when:string> [target:string] [time:string]'
-        : '定时解禁 <when:string> [target:string]',
-      '创建一次定时任务，省略成员则操作全群',
+        ? '定时禁言 <when:string> [...args:string]'
+        : '定时解禁 <when:string> [...args:string]',
+      '创建定时任务：10m / ISO 时间为一次性的；每日22:00、每周一 09:30 为周期任务；省略成员则操作全群',
       mute ? '定时禁言' : '定时解禁',
-    ).action(({ session }, ...args) =>
+    ).action(({ session }, when, ...rest) =>
       guard(async () => {
-        const [when, target, time] = args
         const s = session!,
+          [target, time] = rest,
           id = target ? userId(target) : ''
         await permission(s, id || undefined)
         if (id && mute && (await host.lists.exempt(botKey(s.bot), s.guildId!, id)))
           throw new UserError('该成员在处罚豁免名单中。')
         if (mute && id && !time)
           throw new UserError('成员定时禁言需要提供禁言时长，例如：定时禁言 10m @成员 30m。')
-        const due = scheduleTime(when),
+        const { due, recur } = parseWhen(when ?? ''),
           code = freshCode()
         if (
           (await state.list(botKey(s.bot), s.guildId!, 'schedule')).filter((r) => r.state === 'pending')
@@ -210,13 +221,18 @@ export function installAutomation(host: Host, state: State) {
           'schedule',
           code,
           s.userId!,
-          { action: mute ? 'mute' : 'unmute', target: id, duration: mute && id ? duration(time!) : 0 },
+          {
+            action: mute ? 'mute' : 'unmute',
+            target: id,
+            duration: mute && id ? duration(time!) : 0,
+            ...(recur ? { recur } : {}),
+          },
           due,
           'pending',
         )
         await record(s, 'schedule-create', code)
         return plain(
-          `定时任务 ${code} 已保存：${new Date(due).toISOString()}（UTC），${id || '全群'}${mute ? '禁言' : '解禁'}。`,
+          `定时任务 ${code} 已保存：${recur ? recurLabel(recur) : `${new Date(due).toISOString()}（UTC）`}，${id || '全群'}${mute ? '禁言' : '解禁'}${recur ? '，将按周期重复执行。' : '。'}`,
         )
       }),
     )
@@ -229,7 +245,7 @@ export function installAutomation(host: Host, state: State) {
         rows
           .map(
             (r) =>
-              `${r.ref} · ${new Date(r.due).toISOString()} · ${r.payload.target || '全群'} ${r.payload.action} · ${r.state}${r.payload.result ? ` · ${r.payload.result}` : ''}`,
+              `${r.ref} · ${r.payload.recur ? recurLabel(r.payload.recur) : new Date(r.due).toISOString()} · ${r.payload.target || '全群'} ${r.payload.action} · ${r.state}${r.payload.result ? ` · ${r.payload.result}` : ''}`,
           )
           .join('\n') || '没有定时任务。',
       )
@@ -251,18 +267,45 @@ export function installAutomation(host: Host, state: State) {
       return ok ? '定时任务已取消。' : '任务不存在或已开始执行。'
     }),
   )
-  cmd('投票设置 <value:string>', '开启/关闭群投票处罚', '投票设置')
+  cmd('投票设置 <value:string>', '开启/关闭群投票处罚；--禁言、--踢人 单独控制一类', '投票设置')
     .option('votes', '--票数 <count:posint>', { fallback: 3 })
     .option('ttl', '--期限 <time:string>', { fallback: '5m' })
+    .option('opposes', '--反对 <count:posint>')
+    .option('mute', '--禁言')
+    .option('kick', '--踢人')
     .action(({ session, options }, value) =>
       guard(async () => {
         if (options!.votes! < 2 || options!.votes! > 50) throw new UserError('通过票数须为 2～50。')
+        if (options!.opposes !== undefined && (options!.opposes! < 1 || options!.opposes! > 50))
+          throw new UserError('反对票数须为 1～50。')
         const ttl = duration(options!.ttl!)
         if (ttl > 3600_000) throw new UserError('投票期限最多 1 小时。')
-        const enabled = await editPolicy(session!, 'vote-policy', value, { votes: options!.votes, ttl })
-        return enabled
-          ? `已开启投票处罚：${options!.votes} 票通过，期限 ${ttl / 1000} 秒。`
-          : '投票处罚已关闭，未执行的投票不会再处罚。'
+        const s = session!
+        await permission(s)
+        const current = await state.get(botKey(s.bot), s.guildId!, 'vote-policy')
+        const scoped = !!(options!.mute || options!.kick)
+        // Scoped toggles keep the policy enabled and only flip one punishment type.
+        const enabled = scoped ? true : on(value)
+        const payload: Record<string, any> = {
+          ...(current?.payload ?? {}),
+          votes: options!.votes,
+          ttl,
+          opposes: options!.opposes ?? (current?.payload?.opposes ?? options!.votes),
+        }
+        if (options!.mute) payload.mute = value !== '关'
+        if (options!.kick) payload.kick = value !== '关'
+        if (!scoped && value === '开') {
+          // An unscoped enable turns both punishment types back on.
+          payload.mute = true
+          payload.kick = true
+        }
+        await state.put(botKey(s.bot), s.guildId!, 'vote-policy', '', s.userId!, payload, 0, enabled ? 'enabled' : 'disabled')
+        await record(s, 'policy-vote-policy', value)
+        if (!enabled) return '投票处罚已关闭，未执行的投票不会再处罚。'
+        const parts = [`${options!.votes} 票通过`, `${payload.opposes} 票反对即否决`]
+        if (payload.mute === false) parts.push('投票禁言已关闭')
+        if (payload.kick === false) parts.push('投票踢人已关闭')
+        return `已开启投票处罚：${parts.join('，')}，期限 ${ttl / 1000} 秒。`
       }),
     )
   for (const kick of [false, true])
@@ -278,6 +321,8 @@ export function installAutomation(host: Host, state: State) {
         const p = await policy(s, 'vote-policy'),
           id = userId(target)
         if (p?.state !== 'enabled') throw new UserError('管理员尚未开启投票处罚。')
+        if ((kick ? p.payload.kick : p.payload.mute) === false)
+          throw new UserError(kick ? '投票踢人已被管理员单独关闭。' : '投票禁言已被管理员单独关闭。')
         await call(() => internal(s.bot).getGroupMemberInfo(s.guildId!, s.userId!, true))
         await allowedTarget(s.bot, s.guildId!, p.actor, id)
         if (id === s.userId) throw new UserError('不能对自己发起处罚投票。')
@@ -311,31 +356,38 @@ export function installAutomation(host: Host, state: State) {
               duration: ms,
               initiator: s.userId!,
               voters: [s.userId!],
+              opposers: [],
               required: p.payload.votes,
+              opposes: p.payload.opposes ?? p.payload.votes,
             },
           })
         })
         await record(s, 'vote-create', code)
-        return `投票 ${code}：${kick ? '踢出' : `禁言 ${ms / 1000} 秒`} ${id}，1/${p.payload.votes} 票。发送“赞成 ${code}”投票。`
+        return `投票 ${code}：${kick ? '踢出' : `禁言 ${ms / 1000} 秒`} ${id}，1/${p.payload.votes} 票。发送“赞成 ${code}”或“反对 ${code}”投票。`
       }),
     )
-  cmd('赞成 <code:string>', '当前群每名成员只能投一票', '赞成').action(({ session }, code) =>
+  const voteMember = async (s: Session) => {
+    const member = await call(() => internal(s.bot).getGroupMemberInfo(s.guildId!, s.userId!, true))
+    return ['admin', 'owner'].includes(member.role)
+  }
+  cmd('赞成 <code:string>', '当前群每名成员只能投一边；管理员投赞成立即执行', '赞成').action(({ session }, code) =>
     guard(async () => {
       const s = session!
       if (!(await inScope(s))) throw new UserError('此群尚未开放群管理。')
       if ((await policy(s, 'vote-policy'))?.state !== 'enabled') throw new UserError('投票处罚已关闭。')
-      await call(() => internal(s.bot).getGroupMemberInfo(s.guildId!, s.userId!, true))
+      const admin = await voteMember(s)
       const result = await state.edit(
         state.id(botKey(s.bot), s.guildId!, 'vote', code.toUpperCase()),
         (row) => {
           if (row.state !== 'voting' || row.due <= Date.now()) throw new UserError('投票已结束或过期。')
-          if (row.payload.voters.includes(s.userId)) throw new UserError('你已经投过票。')
+          if (row.payload.voters.includes(s.userId) || (row.payload.opposers ?? []).includes(s.userId))
+            throw new UserError('你已经投过票。')
           row.payload.voters.push(s.userId)
-          if (row.payload.voters.length >= row.payload.required) {
+          if (admin || row.payload.voters.length >= row.payload.required) {
             row.state = 'pending'
             row.due = Date.now()
           }
-          return `${row.payload.voters.length}/${row.payload.required} 票${row.state === 'pending' ? '，已达到通过票数。' : '。'}`
+          return `${row.payload.voters.length}/${row.payload.required} 票${row.state === 'pending' ? (admin ? '，管理员投票，立即进入执行。' : '，已达到通过票数。') : '。'}`
         },
       )
       if (!result) throw new UserError('本群没有此投票。')
@@ -343,6 +395,31 @@ export function installAutomation(host: Host, state: State) {
       events(tick)
       return result
     }),
+  )
+  cmd('反对 <code:string>', '当前群每名成员只能投一边；达到反对票数或管理员反对即否决', '反对').action(
+    ({ session }, code) =>
+      guard(async () => {
+        const s = session!
+        if (!(await inScope(s))) throw new UserError('此群尚未开放群管理。')
+        if ((await policy(s, 'vote-policy'))?.state !== 'enabled') throw new UserError('投票处罚已关闭。')
+        const admin = await voteMember(s)
+        const result = await state.edit(
+          state.id(botKey(s.bot), s.guildId!, 'vote', code.toUpperCase()),
+          (row) => {
+            if (row.state !== 'voting' || row.due <= Date.now()) throw new UserError('投票已结束或过期。')
+            if (row.payload.voters.includes(s.userId) || (row.payload.opposers ?? []).includes(s.userId))
+              throw new UserError('你已经投过票。')
+            ;(row.payload.opposers ??= []).push(s.userId)
+            const threshold = row.payload.opposes ?? row.payload.required
+            const rejected = admin || row.payload.opposers.length >= threshold
+            if (rejected) row.state = 'rejected'
+            return `反对 ${row.payload.opposers.length}/${threshold} 票${rejected ? '，投票已否决，不会执行处罚。' : '。'}`
+          },
+        )
+        if (!result) throw new UserError('本群没有此投票。')
+        await record(s, 'vote-oppose', code)
+        return result
+      }),
   )
   cmd('投票列表', '查看当前群的投票', '投票列表').action(({ session }) =>
     guard(async () => {
@@ -353,7 +430,7 @@ export function installAutomation(host: Host, state: State) {
         rows
           .map(
             (r) =>
-              `${r.ref} · ${r.payload.target} · ${r.payload.voters.length}/${r.payload.required} · ${r.state}`,
+              `${r.ref} · ${r.payload.target} · 赞成 ${r.payload.voters.length}/${r.payload.required} · 反对 ${(r.payload.opposers ?? []).length}/${r.payload.opposes ?? r.payload.required} · ${r.state}`,
           )
           .join('\n') || '没有投票。',
       )
@@ -839,10 +916,41 @@ export function installAutomation(host: Host, state: State) {
         await db.remove('ember_group_data', { kind: { $in: ['seen', 'message'] }, due: { $lte: now } })
         await db.remove('ember_group_data', {
           kind: { $in: ['vote', 'schedule', 'verify', 'word-action'] },
-          state: { $in: ['acknowledged', 'failed', 'uncertain', 'expired', 'cancelled', 'verified'] },
+          state: { $in: ['acknowledged', 'failed', 'uncertain', 'expired', 'cancelled', 'rejected', 'verified'] },
           updated: { $lt: now - config.auditDays * 86400_000 },
         })
       })
+      // Remind a closing vote once, one minute before its deadline at the earliest.
+      const closing = await store.db.get(
+        'ember_group_data',
+        { kind: 'vote', state: 'voting', due: { $lte: now + 60_000 } },
+        { sort: { due: 'asc' }, limit: 10 },
+      )
+      for (const vote of closing) {
+        if (vote.payload.reminded) continue
+        const bot = ctx.bots.find(
+          (b) => host.active(b) && botKey(b) === vote.bot && b.status === Universal.Status.ONLINE,
+        )
+        if (!bot) continue
+        const claimed = await state.edit(vote.id, (row) => {
+          if (row.state !== 'voting' || row.payload.reminded) return false
+          row.payload.reminded = true
+          return true
+        })
+        if (!claimed) continue
+        try {
+          await call(() =>
+            bot.sendMessage(
+              vote.guildId,
+              plain(
+                `投票 ${vote.ref} 将在 1 分钟内结束：赞成 ${vote.payload.voters.length}/${vote.payload.required}，反对 ${(vote.payload.opposers ?? []).length}/${vote.payload.opposes ?? vote.payload.required}。`,
+              ),
+            ),
+          )
+        } catch {
+          // The reminder is best-effort; the vote itself keeps its stored deadline.
+        }
+      }
       const due = await store.db.get(
         'ember_group_data',
         { kind: { $in: ['schedule', 'vote', 'verify'] }, state: 'pending', due: { $lte: now } },
@@ -863,6 +971,7 @@ export function installAutomation(host: Host, state: State) {
           )
             throw new UserError('当前群已移出管理范围。')
           await execute(bot, row)
+          if (row.payload?.recur && (await state.reschedule(row.id, row.claim))) continue
           await state.finish(row.id, row.claim, 'acknowledged', '平台操作已确认，或提醒已入队。')
         } catch (e) {
           await state.finish(

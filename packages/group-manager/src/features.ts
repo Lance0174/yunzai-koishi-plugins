@@ -451,7 +451,7 @@ export function installFeatures(host: Host) {
   cmd('历史申请', '读取平台保留的群申请；无有效 flag 时只能查看').action(({ session }) =>
     guard(async () => {
       const s = session!
-      host.requireReview(s)
+      await host.requireReview(s)
       const data = await call(() => api(s).getGroupSystemMsg())
       const rows = [
         ...(Array.isArray(data?.invited_requests) ? data.invited_requests : []),
@@ -468,7 +468,7 @@ export function installFeatures(host: Host) {
   cmd('补录申请', '仅补录平台明确返回有效 flag 的群申请').action(({ session }) =>
     guard(async () => {
       const s = session!
-      host.requireReview(s)
+      await host.requireReview(s)
       const data = await call(() => api(s).getGroupSystemMsg())
       let imported = 0,
         skipped = 0
@@ -513,13 +513,16 @@ export function installFeatures(host: Host) {
   cmd('帮助', '查看完整群管指令', '群管帮助').action(() =>
     plain(
       `日常：禁言 @成员 10m / 解禁 @成员 / 踢人 @成员 [--拉黑] / 全员禁言 开或关 / 名片 @成员 名称 / 引用后撤回\n` +
+        `跨群：管理员私聊发送“禁言 群号 @成员 10m”（解禁、踢人、全员禁言同理），支持一次多名成员\n` +
         `角色：设置管理 / 取消管理 / 设置头衔 / 清除头衔 / ${config.command} 开放头衔 开或关 / 申请头衔\n` +
         `群资料：修改群名 / 设置群头像 / 群公告 / 公告列表 / 删除公告 / 引用后加精或移精 / 精华列表\n` +
         `成员：群成员 QQ / 禁言列表 / 解除全部禁言 / 活跃排行 / 潜水排行 / 最近入群 / 清理潜水 天数 [--执行] / 我要自闭 10m\n` +
-        `定时：定时禁言 10m [@成员 30m] / 定时解禁 10m [@成员] / 定时任务 / 取消定时 编号（也支持带时区的 ISO 日期时间）\n` +
+        `定时：定时禁言 10m [@成员 30m] / 定时解禁 10m [@成员] / 定时任务 / 取消定时 编号\n` +
+        `周期：定时禁言 每日22:00、定时解禁 每周一09:30（可加时区后缀 +08:00）；到点自动执行并按周期重新排队，重启后仍只执行一次\n` +
         `规则：${config.command} 豁免 添加|删除|列表 [QQ] / 申请黑名单 添加|删除|列表 [QQ] / 违禁词 添加|删除|列表|预览 [词语] [--精确] [--禁言 10m]\n` +
         `入群：${config.command} 自动审核 开|关 [--答案 文本] [--等级 数字] / 入群验证 开|关 [--超时 10m] [--踢出] / 验证通过 @成员\n` +
-        `投票：投票设置 开|关 [--票数 3] / 投票禁言 @成员 10m / 投票踢人 @成员 / 赞成 编号 / 投票列表 / 取消投票 编号\n` +
+        `投票：投票设置 开|关 [--票数 3] [--反对 3] [--禁言] [--踢人] / 投票禁言 @成员 10m / 投票踢人 @成员 / 赞成 编号 / 反对 编号 / 投票列表 / 取消投票 编号\n` +
+        `审核：请求带编号；审核群引用通知审批，管理员私聊或监听目标可直接“${config.command} 同意 编号”\n` +
         `监听：事件监听 开 --管理员 / 开 --群 群号 --私聊 QQ / 关 / 状态；事件通知 开|关 [事件类型] [--全局]\n` +
         `名单：黑名单 添加|删除|列表 [QQ] [--全局] [--群] / 白名单 添加|删除|列表 [QQ] [--全局] [--群]\n` +
         `消息：发通知 群号,群号 正文 / ${config.command} 消息路由 开|关 [--目标 群号] [--转发] [--撤回] [--保留 30]\n` +
@@ -530,7 +533,7 @@ export function installFeatures(host: Host) {
     ...automation,
     blocked: async (bot: string, guild: string, user: string) =>
       (await state.get(bot, guild, 'blocked', user))?.state === 'enabled',
-    punishable: (s: Session, id: string) => punishable(host, state, s, id),
+    punishable: (s: Session, id: string, guild?: string) => punishable(host, state, s, id, guild),
   }
 }
 

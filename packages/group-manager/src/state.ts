@@ -1,6 +1,7 @@
 import { Context } from 'koishi'
 import { randomUUID } from 'node:crypto'
 import { Store, key } from './store'
+import { nextRecurring } from './schedule'
 
 export interface DataRow {
   id: string
@@ -148,6 +149,35 @@ export class State {
         detail: detail.slice(0, 300),
         created: this.store.now(),
       })
+    })
+  }
+  // Recurring schedules return to the queue with the next occurrence instead of
+  // terminating; a task due while offline still executes exactly once.
+  reschedule(id: string, claim: string) {
+    return this.store.atomic(async (db) => {
+      const row = (await db.get('ember_group_data', { id, claim, state: 'processing' }))[0]
+      if (!row?.payload?.recur) return false
+      const now = this.store.now()
+      await db.set('ember_group_data', { id }, {
+        state: 'pending',
+        due: nextRecurring(row.payload.recur, now),
+        claim: '',
+        lease: 0,
+        updated: now,
+        payload: { ...row.payload, lastRun: now },
+      })
+      await db.create('ember_group_audit', {
+        id: randomUUID(),
+        bot: row.bot,
+        guildId: row.guildId,
+        actor: row.actor,
+        action: row.kind,
+        target: row.ref,
+        state: 'acknowledged',
+        detail: '周期任务已重新排队。',
+        created: now,
+      })
+      return true
     })
   }
   async recover() {

@@ -62,7 +62,7 @@ test('SQLite transactions deduplicate 20 concurrent requests and permit exactly 
   )
 })
 
-test('request flags, bots, real notice IDs and notification channels remain isolated', async () => {
+test('request flags, bots and real notice IDs remain isolated across accounts', async () => {
   const first = await store.receive(input('same'), 60000)
   const second = await store.receive(input('same', 'onebot:901'), 60000)
   assert.notEqual(first.id, second.id)
@@ -76,7 +76,9 @@ test('request flags, bots, real notice IDs and notification channels remain isol
     await store.finishNotice(notice.id, claim, 'sent', message)
     assert.equal((await store.locate(first.bot, undefined, channel, message)).id, first.id)
   }
-  assert.equal(await store.locate(first.bot, undefined, '500', '2'), undefined)
+  // Approval quotes key on the protocol message id, so a delivered notice can be
+  // quoted from any channel; forged or foreign message ids never resolve.
+  assert.equal((await store.locate(first.bot, undefined, '500', '2')).id, first.id)
   assert.equal(await store.locate(first.bot, undefined, '500', 'forged text'), undefined)
 })
 

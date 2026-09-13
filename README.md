@@ -1,6 +1,6 @@
 # Yunzai → Koishi 功能迁移插件
 
-当前版本：群管理 0.3.1（开发中）、点歌 0.3.0、视频解析 0.3.4。仅群管理使用 Koishi 市场开发预览标记。
+当前版本：群管理 0.3.2（开发中，本地版本，发布记录待更新）、点歌 0.3.0、视频解析 0.3.4。仅群管理使用 Koishi 市场开发预览标记。
 
 [源码仓库](https://github.com/Lance0174/yunzai-koishi-plugins) · [GitHub Releases](https://github.com/Lance0174/yunzai-koishi-plugins/releases) · [问题反馈](https://github.com/Lance0174/yunzai-koishi-plugins/issues)
 
@@ -8,7 +8,7 @@
 
 | 独立插件 | 包名 | 默认行为 |
 | --- | --- | --- |
-| [群管理（开发中）](packages/group-manager/README.md) | koishi-plugin-yunzai-group-manager | 所有群可用，黑名单忽略、白名单豁免；独立事件监听默认私聊管理员，通知用指令开关 |
+| [群管理（开发中）](packages/group-manager/README.md) | koishi-plugin-yunzai-group-manager | 所有群可用，黑名单忽略、白名单豁免；审核通知带编号并送达私聊管理员，可直接编号审批；管理员私聊群管与多目标；周期定时与完整投票；独立事件监听默认私聊管理员 |
 | [点歌](packages/music/README.md) | koishi-plugin-yunzai-music-request | 搜索后直接发送第一首，可选择卡片/语音；不开放 Cookie 输入；网易云私聊扫码 |
 | [视频解析](packages/video/README.md) | koishi-plugin-yunzai-video-parser | 三站裸链接/卡片自动识别，自动安装缺少的 ffmpeg/ffprobe，默认合并消息 |
 

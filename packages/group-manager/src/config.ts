@@ -41,7 +41,9 @@ export const Config: Schema<Config> = Schema.object({
     .description('限定机器人 QQ；留空适用所有 OneBot 账户，各账户数据独立。'),
   reviewers: Schema.array(String)
     .default([])
-    .description('机器人管理员 QQ：允许审核，也是事件监听的默认私聊收件人。'),
+    .description(
+      '机器人管理员 QQ：允许审核与私聊群管（私聊指令以群号开头），也是事件监听的默认私聊收件人。',
+    ),
   reviewGroups: Schema.array(String).default([]).description('接收通知及允许审批的群号。'),
   managedGroups: Schema.array(String)
     .default([])

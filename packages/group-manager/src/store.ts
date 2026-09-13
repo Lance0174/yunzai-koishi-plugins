@@ -216,10 +216,12 @@ export class Store {
     })
   }
 
-  async locate(bot: string, code?: string, channel?: string, messageId?: string) {
+  async locate(bot: string, code?: string, _channel?: string, messageId?: string) {
     if (code) return (await this.db.get('ember_group_request', { bot, code: code.toUpperCase() }))[0]
-    if (!channel || !messageId) return
-    const notice = (await this.db.get('ember_group_notice', { bot, channel, messageId, state: 'sent' }))[0]
+    // A notice's message id is protocol-issued and unique; approval may quote the
+    // notification in any channel it was delivered to, including private chat.
+    if (!messageId) return
+    const notice = (await this.db.get('ember_group_notice', { bot, messageId, state: 'sent' }))[0]
     return notice && (await this.db.get('ember_group_request', { bot, id: notice.requestId }))[0]
   }
 

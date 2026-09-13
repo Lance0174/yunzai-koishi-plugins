@@ -1,5 +1,5 @@
 import { Context, Session, h, Bot } from 'koishi'
-import { Store, models, RequestRow, EventRow } from './store'
+import { Store, models, RequestRow, EventRow, key } from './store'
 import { ActionError, duration, internal, timed, userId } from './onebot'
 import { UserError } from './errors'
 import { State, stateModel } from './state'
@@ -10,7 +10,7 @@ import type { Host } from './support'
 export const name = 'yunzai-group-manager'
 export const inject = ['database']
 export const usage =
-  '**开发中 · 开发预览版本。** 群管理功能仍在完善。\n\n日常群管默认在所有群可用，仍需真实群管理权限。事件监听和事件通知独立且默认开启，默认私聊 reviewers 中的管理员；可用“事件监听 开 --群 群号 --私聊 QQ”和“事件通知 关 成员变动”修改。黑名单忽略消息，白名单豁免处罚和验证。\n\n迁移来源：[yenai-plugin / yeyang52 及贡献者](https://github.com/yeyang52/yenai-plugin)、[GroupEntry_Plugin / A1Panda 及贡献者](https://github.com/A1Panda/GroupEntry_Plugin)。详见安装包 THIRD_PARTY_NOTICES.md。'
+  '**开发中 · 开发预览版本。** 群管理功能仍在完善。\n\n日常群管默认在所有群可用，仍需真实群管理权限；管理员（reviewers）可从私聊以“群管理 禁言 群号 @成员 10m”的形式跨群操作，并支持一次对多名成员执行。审核通知带请求编号，会同时发送到审核群与事件监听目标，可引用通知或直接用“群管理 同意 编号”审批。事件监听和事件通知独立且默认开启，默认私聊 reviewers 中的管理员。黑名单忽略消息，白名单豁免处罚和验证。\n\n迁移来源：[yenai-plugin / yeyang52 及贡献者](https://github.com/yeyang52/yenai-plugin)、[GroupEntry_Plugin / A1Panda 及贡献者](https://github.com/A1Panda/GroupEntry_Plugin)。详见安装包 THIRD_PARTY_NOTICES.md。'
 export { Config } from './config'
 import { Config } from './config'
 import { installFeatures } from './features'
@@ -44,20 +44,42 @@ export function apply(ctx: Context, config: Config) {
   const active = (bot: Bot) =>
     bot.platform === 'onebot' && (!config.botIds.length || config.botIds.includes(bot.selfId))
   const botKey = (bot: Bot) => `${bot.platform}:${bot.selfId}`
-  const canReview = (s: Session) =>
-    !!s.userId! &&
-    !!s.channelId! &&
-    active(s.bot) &&
-    config.reviewers.includes(s.userId!) &&
-    (s.guildId! ? config.reviewGroups.includes(s.guildId!) : config.privateReview)
-  const requireReview = (s: Session) => {
-    if (!config.reviews || !canReview(s)) throw new UserError('你没有在此会话审核群请求的权限。')
+  // Reviewers act as the bot's masters: they review requests, receive listener
+  // notices and may run basic group admin from private chat with a group number.
+  const reviewAllowed = async (s: Session, row?: RequestRow) => {
+    if (
+      !config.reviews ||
+      !s.userId ||
+      !s.channelId ||
+      !active(s.bot) ||
+      !config.reviewers.includes(s.userId)
+    )
+      return false
+    if (!s.guildId) return config.privateReview
+    if (config.reviewGroups.includes(s.guildId)) return true
+    if (
+      row &&
+      s.quote?.id &&
+      (await store.locate(botKey(s.bot), undefined, undefined, s.quote.id))?.id === row.id
+    )
+      return true
+    return (await notifications.targets(botKey(s.bot))).includes(`g:${s.guildId}`)
+  }
+  const requireReview = async (s: Session, row?: RequestRow) => {
+    if (!(await reviewAllowed(s, row))) throw new UserError('你没有在此会话审核群请求的权限。')
   }
 
-  async function audit(s: Session, action: string, target: string, state: string, detail = '') {
+  async function audit(
+    s: Session,
+    action: string,
+    target: string,
+    state: string,
+    detail = '',
+    guild = s.guildId!,
+  ) {
     await store.audit({
       bot: botKey(s.bot),
-      guildId: s.guildId! ?? '',
+      guildId: guild ?? '',
       actor: s.userId!,
       action,
       target,
@@ -78,7 +100,26 @@ export function apply(ctx: Context, config: Config) {
     if (await lists.ignored(botKey(s.bot), guild, s.userId)) throw new UserError('此会话已被黑名单忽略。')
     return authorize(s.bot, guild, s.userId!, target)
   }
-  async function authorize(bot: Bot, guild: string, actorId: string, target?: string) {
+  async function masterPermission(s: Session, guild: string, target?: string) {
+    if (
+      !s.userId ||
+      !s.channelId ||
+      !active(s.bot) ||
+      !config.moderation ||
+      (config.managedGroups.length > 0 && !config.managedGroups.includes(guild)) ||
+      !config.reviewers.includes(s.userId)
+    )
+      throw new UserError('私聊群管仅允许机器人管理员在开放群管的群使用。')
+    if (await lists.ignored(botKey(s.bot), guild, s.userId)) throw new UserError('此会话已被黑名单忽略。')
+    return authorize(s.bot, guild, s.userId, target, 'master')
+  }
+  async function authorize(
+    bot: Bot,
+    guild: string,
+    actorId: string,
+    target?: string,
+    mode: 'member' | 'master' = 'member',
+  ) {
     if (await lists.ignored(botKey(bot), guild, actorId)) throw new UserError('此会话已被黑名单忽略。')
     const api = internal(bot)
     let actor, self, member
@@ -86,7 +127,7 @@ export function apply(ctx: Context, config: Config) {
       ;[actor, self, member] = await timed(
         () =>
           Promise.all([
-            api.getGroupMemberInfo(guild, actorId, true),
+            mode === 'master' ? Promise.resolve(undefined) : api.getGroupMemberInfo(guild, actorId, true),
             api.getGroupMemberInfo(guild, bot.selfId, true),
             target ? api.getGroupMemberInfo(guild, target, true) : Promise.resolve(undefined),
           ]),
@@ -95,18 +136,31 @@ export function apply(ctx: Context, config: Config) {
     } catch {
       throw new UserError('无法核验目标群角色，请稍后再试。')
     }
-    if (!['admin', 'owner'].includes(actor.role)) throw new UserError('操作人须为目标群管理员或群主。')
-    if (!['admin', 'owner'].includes(self.role)) throw new UserError('机器人没有目标群管理权限。')
+    // Master mode delegates through the bot's own role: private-chat masters are
+    // not required to be members of the target group themselves.
+    const effective = mode === 'master' ? self! : actor!
+    if (mode === 'member' && !['admin', 'owner'].includes(effective.role))
+      throw new UserError('操作人须为目标群管理员或群主。')
+    if (!['admin', 'owner'].includes(self!.role)) throw new UserError('机器人没有目标群管理权限。')
     if (target === bot.selfId) throw new UserError('不能对机器人自身执行此操作。')
     if (
       member &&
       (member.role === 'owner' ||
-        (member.role === 'admin' && (actor.role !== 'owner' || self.role !== 'owner')))
+        (member.role === 'admin' && (effective.role !== 'owner' || self!.role !== 'owner')))
     )
       throw new UserError('无法对该群主或管理员执行此操作。')
-    return { actor, self, member }
+    return { actor: effective, self: self!, member }
   }
 
+  const requestTopic = (kind: string) => (kind === 'invite' ? '群邀请' : '入群申请')
+  // Coded review notices reach review groups always, and listener targets when
+  // their request-kind switch is on; stale channels re-check on every flush.
+  async function noticeChannelOk(bot: Bot, channel: string, request: RequestRow) {
+    if (config.reviewGroups.includes(channel)) return true
+    if (!channel.startsWith('p:') && !channel.startsWith('g:')) return false
+    if (!(await notifications.targets(botKey(bot))).includes(channel)) return false
+    return notifications.enabled(botKey(bot), request.guildId, requestTopic(request.kind))
+  }
   async function flush() {
     if (flushing || disposed) return
     flushing = true
@@ -118,26 +172,30 @@ export function apply(ctx: Context, config: Config) {
       for (const n of waiting) {
         if (disposed) break
         const bot = ctx.bots.find((b) => botKey(b) === n.bot && active(b))
-        if (!bot || !config.reviewGroups.includes(n.channel)) continue
-        const slot = `${n.bot}:${n.channel}`
-        if (Date.now() - (sentAt.get(slot) ?? 0) < config.noticeInterval) continue
+        if (!bot) continue
         const request = (await ctx.database.get('ember_group_request', { id: n.requestId }))[0]
         if (!request || request.state !== 'pending') {
           await ctx.database.set('ember_group_notice', { id: n.id, state: 'pending' }, { state: 'cancelled' })
           continue
         }
+        if (
+          (await lists.ignored(botKey(bot), request.guildId)) ||
+          !(await noticeChannelOk(bot, n.channel, request))
+        )
+          continue
+        const slot = `${n.bot}:${n.channel}`
+        if (Date.now() - (sentAt.get(slot) ?? 0) < config.noticeInterval) continue
         const claim = await store.claimNotice(n.id, config.apiTimeout + 30_000)
         if (!claim) continue
         sentAt.set(slot, Date.now())
+        const hint = `引用本通知发送“${config.command} 同意”或“${config.command} 拒绝”；也可直接发送“${config.command} 同意 ${request.code}”。`
+        const target = n.channel.startsWith('p:') || n.channel.startsWith('g:') ? n.channel.slice(2) : n.channel
         try {
           const ids = await timed(
             () =>
-              bot.sendMessage(
-                n.channel,
-                text(
-                  format(request) + `\n引用本通知发送“${config.command} 同意”或“${config.command} 拒绝”。`,
-                ),
-              ),
+              n.channel.startsWith('p:')
+                ? bot.sendPrivateMessage(target, text(format(request) + `\n${hint}`))
+                : bot.sendMessage(target, text(format(request) + `\n${hint}`)),
             config.apiTimeout,
           )
           await store.finishNotice(n.id, claim, ids?.[0] ? 'sent' : 'uncertain', ids?.[0] ?? '')
@@ -232,8 +290,31 @@ export function apply(ctx: Context, config: Config) {
         logger.warn('自动审核条件无法核验，已保留人工审核。')
       }
     }
-    if ((await ctx.database.get('ember_group_request', { id: request.id }))[0]?.state === 'pending')
-      for (const channel of new Set(config.reviewGroups)) await store.notice(request, channel)
+    const current = (await ctx.database.get('ember_group_request', { id: request.id }))[0]
+    const topic = requestTopic(kind)
+    if (current?.state === 'pending') {
+      const channels = new Set(config.reviewGroups)
+      for (const target of await notifications.targets(botKey(s.bot))) {
+        if (target.startsWith('g:') && config.reviewGroups.includes(target.slice(2))) continue
+        if (!(await notifications.enabled(botKey(s.bot), request.guildId, topic))) continue
+        channels.add(target)
+      }
+      for (const channel of channels) await store.notice(request, channel)
+    } else if (current) {
+      // Auto-processed requests never enter the review queue; tell the listener
+      // targets what happened instead of leaving them with a bare summary.
+      const summary = `请求已自动处理：[${current.code}] ${kind === 'invite' ? '机器人群邀请' : '成员入群申请'}\n机器人：${current.selfId}\n群：${current.guildId}；申请人：${current.userId}\n结果：${labels[current.state] ?? current.state}`
+      for (const target of await notifications.targets(botKey(s.bot))) {
+        if (!(await notifications.enabled(botKey(s.bot), request.guildId, topic))) continue
+        await store.enqueueEvent(
+          botKey(s.bot),
+          target,
+          key(botKey(s.bot), current.id, target, 'auto'),
+          summary,
+          { guildId: current.guildId, topic },
+        )
+      }
+    }
     await flush()
   }
   const guardedEvent = (fn: () => Promise<unknown>) => {
@@ -295,9 +376,26 @@ export function apply(ctx: Context, config: Config) {
         : '存储或服务异常，请查看操作状态后再试。'
     }
   }
+  // Private-chat sessions have no guild: the first token must be a group number.
+  const takeGuild = (s: Session, tokens: string[]) => {
+    if (s.guildId) return { guild: s.guildId, rest: tokens }
+    const guild = tokens[0] ?? ''
+    if (!/^\d{1,20}$/.test(guild))
+      throw new UserError(`私聊使用时请以群号开头，例如：${config.command} 禁言 123456 @成员 10m。`)
+    return { guild, rest: tokens.slice(1) }
+  }
+  const targets = (rest: string[], needTime: boolean) => {
+    if (needTime) {
+      if (rest.length < 2) throw new UserError('用法：禁言 @成员 时长，可对多名成员；私聊请以群号开头。')
+      const ms = duration(rest[rest.length - 1])
+      return { ids: [...new Set(rest.slice(0, -1).map(userId))], ms }
+    }
+    if (!rest.length) throw new UserError('请指定至少一名群成员。')
+    return { ids: [...new Set(rest.map(userId))], ms: 0 }
+  }
   command('请求列表 [page:posint]', '列出本账户群请求').action(({ session }, page = 1) =>
     guard(async () => {
-      requireReview(session!)
+      await requireReview(session!)
       await store.recover()
       const rows = await ctx.database.get(
         'ember_group_request',
@@ -309,9 +407,10 @@ export function apply(ctx: Context, config: Config) {
   )
   command('审核 [id:string]', '查看群请求').action(({ session }, id) =>
     guard(async () => {
-      requireReview(session!)
+      const s = session!
       await store.recover()
-      const row = await store.locate(botKey(session!.bot), id, session!.channelId, session!.quote?.id)
+      const row = await store.locate(botKey(s.bot), id, s.channelId, s.quote?.id)
+      await requireReview(s, row)
       return text(row ? format(row) : '找不到此请求；请使用请求列表中的编号，或引用原通知。')
     }),
   )
@@ -319,17 +418,18 @@ export function apply(ctx: Context, config: Config) {
     ['同意', true],
     ['拒绝', false],
   ] as const) {
-    command(`${verb} [id:string]`, `${verb}一条群请求`)
+    command(`${verb} [id:string]`, `${verb}一条群请求；可引用通知或直接填写编号`)
       .option('reason', '--原因 <text:text>')
       .action(({ session, options }, id) =>
         guard(async () => {
           const s = session!
-          requireReview(s)
           await store.recover()
-          const row = await store.locate(botKey(s.bot), id, s.channelId!, s.quote?.id)
+          const row = await store.locate(botKey(s.bot), id, s.channelId, s.quote?.id)
+          await requireReview(s, row)
           if (!row) throw new UserError('找不到此请求；不接受根据引用正文匹配，请使用编号或原通知。')
           if (row.kind === 'member') {
-            await permission(s, undefined, row.guildId, true)
+            if (s.guildId) await permission(s, undefined, row.guildId, true)
+            else await masterPermission(s, row.guildId)
             if (approve && (await features.blocked(botKey(s.bot), row.guildId, row.userId)))
               throw new UserError('申请人在本群申请黑名单中，请先移除名单再同意。')
           }
@@ -367,11 +467,11 @@ export function apply(ctx: Context, config: Config) {
         }),
       )
   }
-  async function perform(s: Session, action: string, target: string, run: () => Promise<unknown>) {
-    await audit(s, action, target, 'processing')
+  async function perform(s: Session, action: string, target: string, run: () => Promise<unknown>, guild = s.guildId!) {
+    await audit(s, action, target, 'processing', '', guild)
     try {
       await timed(run, config.apiTimeout)
-      await audit(s, action, target, 'acknowledged')
+      await audit(s, action, target, 'acknowledged', '', guild)
       return '平台已确认操作，请核对实际群内效果。'
     } catch (error) {
       await audit(
@@ -379,44 +479,69 @@ export function apply(ctx: Context, config: Config) {
         action,
         target,
         error instanceof ActionError && !error.uncertain ? 'failed' : 'uncertain',
+        '',
+        guild,
       )
       throw error
     }
   }
+  const authorizeTarget = async (s: Session, guild: string, id: string) => {
+    if (s.guildId) await permission(s, id, guild)
+    else await masterPermission(s, guild, id)
+  }
+  const runPerTarget = async (ids: string[], action: (id: string) => Promise<string>) => {
+    const results: string[] = []
+    for (const id of ids) results.push(`${id}：${await guard(async () => action(id))}`)
+    return text(results.join('\n'))
+  }
   for (const release of [false, true])
-    command(release ? '解禁 <target:string>' : '禁言 <target:string> <time:string>', '修改成员禁言').action(
-      ({ session }, ...args) =>
-        guard(async () => {
-          const [target, time] = args
-          const id = userId(target),
-            ms = release ? 0 : duration(time ?? '')
-          await permission(session!, id)
-          if (!release) await features.punishable(session!, id)
-          return perform(session!, release ? 'unmute' : 'mute', id, () =>
-            session!.bot.muteGuildMember(session!.guildId!, id, ms),
-          )
-        }),
-    )
-  command('踢人 <target:string>', '移出一名群成员')
-    .option('block', '--拉黑', { fallback: false })
-    .action(({ session, options }, target) =>
+    command(
+      release ? '解禁 [...args:string]' : '禁言 [...args:string]',
+      release
+        ? '解禁一名或多名成员；私聊使用时以群号开头'
+        : '禁言一名或多名成员；私聊使用时以群号开头',
+    ).action(({ session }, ...rest) =>
       guard(async () => {
-        const s = session!,
-          id = userId(target)
-        await permission(s, id)
-        await features.punishable(s, id)
-        return perform(s, 'kick', id, () => s.bot.kickGuildMember(s.guildId!, id, options?.block ?? false))
+        const s = session!
+        const { guild, rest: tokens } = takeGuild(s, rest)
+        const { ids, ms } = targets(tokens, !release)
+        return runPerTarget(ids, async (id) => {
+          await authorizeTarget(s, guild, id)
+          if (!release) await features.punishable(s, id, guild)
+          return perform(s, release ? 'unmute' : 'mute', id, () => s.bot.muteGuildMember(guild, id, ms), guild)
+        })
       }),
     )
-  command('全员禁言 <value:string>', '切换全员禁言').action(({ session }, value) =>
+  command('踢人 [...args:string]', '移出一名或多名群成员；私聊使用时以群号开头')
+    .option('block', '--拉黑', { fallback: false })
+    .action(({ session, options }, ...rest) =>
+      guard(async () => {
+        const s = session!
+        const { guild, rest: tokens } = takeGuild(s, rest)
+        const { ids } = targets(tokens, false)
+        return runPerTarget(ids, async (id) => {
+          await authorizeTarget(s, guild, id)
+          await features.punishable(s, id, guild)
+          return perform(s, 'kick', id, () => s.bot.kickGuildMember(guild, id, options?.block ?? false), guild)
+        })
+      }),
+    )
+  command('全员禁言 [...args:string]', '切换全员禁言；私聊使用时以群号开头').action(({ session }, ...rest) =>
     guard(async () => {
       const s = session!
-      await permission(s)
+      const { guild, rest: tokens } = takeGuild(s, rest)
+      const value = tokens[0] ?? ''
       if (!['开', '关'].includes(value)) throw new UserError('参数只能是“开”或“关”。')
-      if (value === '开' && (await lists.groupExempt(botKey(s.bot), s.guildId!)))
+      if (s.guildId) await permission(s)
+      else await masterPermission(s, guild)
+      if (value === '开' && (await lists.groupExempt(botKey(s.bot), guild)))
         throw new UserError('该群在处罚豁免白名单中。')
-      return perform(s, value === '开' ? 'mute-all' : 'unmute-all', s.guildId!, () =>
-        s.bot.muteChannel(s.channelId!, s.guildId!, value === '开'),
+      return perform(
+        s,
+        value === '开' ? 'mute-all' : 'unmute-all',
+        guild,
+        () => s.bot.muteChannel(s.guildId ? s.channelId! : guild, guild, value === '开'),
+        guild,
       )
     }),
   )
@@ -451,10 +576,11 @@ export function apply(ctx: Context, config: Config) {
   command('审计 [page:posint]', '查看当前范围操作记录').action(({ session }, page = 1) =>
     guard(async () => {
       const s = session!
-      if (!canReview(s)) await permission(s)
+      const allowed = await reviewAllowed(s)
+      if (!allowed) await permission(s)
       const rows = await ctx.database.get(
         'ember_group_audit',
-        { bot: botKey(s.bot), ...(!canReview(s) ? { guildId: s.guildId! } : {}) },
+        { bot: botKey(s.bot), ...(allowed ? {} : { guildId: s.guildId! }) },
         { sort: { created: 'desc' }, limit: config.pageSize, offset: (page - 1) * config.pageSize },
       )
       return text(
@@ -472,7 +598,7 @@ export function apply(ctx: Context, config: Config) {
   command('诊断', '查看账户和模块状态').action(({ session }) =>
     guard(async () => {
       const s = session!
-      if (!canReview(s)) await permission(s)
+      if (!(await reviewAllowed(s))) await permission(s)
       const version = await timed(() => internal(s.bot).getVersionInfo(), config.apiTimeout)
       return text(
         `账户：${botKey(s.bot)}\n协议端：${version.app_name || '未提供'} ${version.app_version || ''}\n审核 ${config.reviews ? '开' : '关'} / 通知 ${config.notices ? '开' : '关'} / 群管 ${config.moderation ? '开' : '关'}`,
@@ -488,6 +614,7 @@ export function apply(ctx: Context, config: Config) {
     active,
     botKey,
     permission,
+    masterPermission,
     authorize,
     perform,
     guard,
