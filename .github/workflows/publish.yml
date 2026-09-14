@@ -13,6 +13,11 @@ on:
           - group-manager
           - music
           - video
+      otp:
+        description: npm 2FA 一次性密码（账号强制 2FA 时必填，30 秒有效）
+        required: false
+        default: ''
+        type: string
   push:
     tags:
       - '*-v[0-9]+.[0-9]+.[0-9]+'
@@ -54,6 +59,6 @@ jobs:
             echo "version=${TAG##*-v}" >> "$GITHUB_OUTPUT"
           fi
       - name: Publish to npm
-        run: node scripts/publish-npm.cjs "${{ steps.target.outputs.target }}" "${{ steps.target.outputs.version }}"
+        run: node scripts/publish-npm.cjs "${{ steps.target.outputs.target }}" "${{ steps.target.outputs.version }}" "${{ github.event.inputs.otp }}"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,7 +1,8 @@
 // Publish one or all plugin packages to npm from the CI workflow (or locally).
-// Usage: node scripts/publish-npm.cjs <all|group-manager|music|video> [version]
-// In CI, NODE_AUTH_TOKEN (an npm automation token) is used; publishing with an
-// automation token does not require a one-time password.
+// Usage: node scripts/publish-npm.cjs <all|group-manager|music|video> [version] [otp]
+// In CI, NODE_AUTH_TOKEN (an npm automation token) is used. If the npm account
+// enforces 2FA for publishing, pass a fresh one-time password as the third
+// argument (e.g. from the workflow's otp input).
 const { execFileSync } = require('node:child_process')
 const path = require('node:path')
 const fs = require('node:fs')
@@ -20,6 +21,7 @@ if (!['all', ...packages].includes(target)) {
   process.exit(1)
 }
 const expectedVersion = process.argv[3]
+const otp = process.argv[4]
 
 function versionOf(dir) {
   return JSON.parse(fs.readFileSync(path.join(root, 'packages', dir, 'package.json'), 'utf8')).version
@@ -31,11 +33,9 @@ for (const dir of selected) {
   if (expectedVersion && version !== expectedVersion)
     throw new Error(`${dir} version ${version} does not match tag version ${expectedVersion}`)
   console.log(`Publishing ${names[dir]}@${version}`)
-  execFileSync(
-    'npm',
-    ['publish', '--access', 'public', '--ignore-scripts', '--no-audit', '--no-fund'],
-    { cwd: path.join(root, 'packages', dir), stdio: 'inherit', env: { ...process.env } },
-  )
+  const args = ['publish', '--access', 'public', '--ignore-scripts', '--no-audit', '--no-fund']
+  if (otp) args.push('--otp=' + otp)
+  execFileSync('npm', args, { cwd: path.join(root, 'packages', dir), stdio: 'inherit', env: { ...process.env } })
   console.log(`Published ${names[dir]}@${version}`)
 }
 console.log('All requested packages published.')
