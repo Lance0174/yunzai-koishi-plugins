@@ -1,0 +1,59 @@
+name: Publish plugins to npm
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 要发布的包（all 或包目录名）
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - group-manager
+          - music
+          - video
+  push:
+    tags:
+      - '*-v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - name: Install dependencies
+        run: npm ci
+      - name: Install test media tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Test plugins
+        run: npm test
+      - name: Build and pack release packages
+        run: npm run pack:all
+      - name: Verify independent Koishi installations
+        run: npm run test:packages
+      - name: Resolve publish target
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "target=${{ github.event.inputs.target }}" >> "$GITHUB_OUTPUT"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+            echo "target=${TAG%-v*}" >> "$GITHUB_OUTPUT"
+            echo "version=${TAG##*-v}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish to npm
+        run: node scripts/publish-npm.cjs "${{ steps.target.outputs.target }}" "${{ steps.target.outputs.version }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

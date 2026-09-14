@@ -60,3 +60,12 @@ npm run test:packages
 ```
 
 媒体测试需要 PATH 中的 ffmpeg/ffprobe，也可设置 FFMPEG、FFPROBE。三个真实安装包分别安装到独立 Koishi 项目验收；报告区分本地协议、公开接口与真实 QQ 的验证范围。公开发布状态见 [发布记录](docs/PUBLICATION-0.3.4.md)。
+
+## 发布流程
+
+发布由 GitHub Actions 完成，仓库需配置 npm 自动化令牌 `NPM_TOKEN`（Settings → Secrets and variables → Actions，用拥有该包 publish 权限的账号生成 Automation token）。两种触发方式：
+
+- **手动**：Actions → Publish plugins to npm → Run workflow，选择发布全部或单个包（group-manager / music / video）。工作流会先运行全套测试、打包与三个独立 Koishi 安装验证，通过后执行 `npm publish`。
+- **打标签**：推送形如 `<包目录名>-v<版本>` 的标签（如 `group-manager-v0.3.2`、`music-v0.3.0`），工作流只发布对应包，并校验包版本与标签一致。
+
+本地手动发布仍可执行 `npm publish`（包目录内），需账号 2FA 提供一次性密码。发布后按仓库惯例在 `docs/PUBLICATION-<版本>.md` 记录回读核对（npm latest、Koishi 索引、GitHub Release 附件 SHA256）。
