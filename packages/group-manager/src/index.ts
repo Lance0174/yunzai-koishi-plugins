@@ -227,16 +227,30 @@ export function apply(ctx: Context, config: Config) {
           }
           if (!deliverable.length) continue
           sentAt.set(slot, Date.now())
+          const forwardNodes = channel.startsWith('p:') || channel.startsWith('g:')
+            ? deliverable.map((row) =>
+                h('message', {}, [
+                  h('author', {
+                    id: row.user || bot.selfId,
+                    name: row.name || (row.user ? `成员 ${row.user}` : '事件通知'),
+                    time: row.created,
+                  }),
+                  h.text(`${row.summary}${row.count > 1 ? `（${row.count} 条）` : ''}`),
+                ]),
+              )
+            : []
           try {
             const ids = await timed(
               () =>
                 (channel.startsWith('p:') ? bot.sendPrivateMessage.bind(bot) : bot.sendMessage.bind(bot))(
                   channel.startsWith('p:') || channel.startsWith('g:') ? channel.slice(2) : channel,
-                  text(
-                    deliverable
-                      .map((row) => `${row.summary}${row.count > 1 ? `（${row.count} 条）` : ''}`)
-                      .join('\n\n'),
-                  ),
+                  forwardNodes.length
+                    ? h('message', { forward: true }, forwardNodes)
+                    : text(
+                        deliverable
+                          .map((row) => `${row.summary}${row.count > 1 ? `（${row.count} 条）` : ''}`)
+                          .join('\n\n'),
+                      ),
                 ),
               config.apiTimeout,
             )

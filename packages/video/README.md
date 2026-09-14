@@ -53,7 +53,7 @@ Docker 将 Koishi 的 data 目录持久化后，重建容器仍可复用已下�
 - `autoInstall`：默认开启，自动准备缺少的 ffmpeg/ffprobe。
 - `toolDownloadTimeout`：整个工具准备流程超时，默认 600000 毫秒。
 - `showProgress`：默认关闭，不发送排队和任务编号提示；开启后显示进度，任务仍可通过“视频解析 任务”查看。
-- `biliCookie`、`douyinCookie`、`xhsCookie`：可选登录态；不同账号和访问地区会影响可用性。
+- `biliCookie`、`douyinCookie`、`xhsCookie`：可选登录态；不同账号和访问地区会影响可用性。主动解析无法识别或失败时，插件会明确提示所支持的站点，并在可能与 Cookie 相关时提示对应配置项。
 - `maxHeight`：默认 720，表示短边像素上限；竖屏按宽度限制。源站可选流不足时可能转码或返回失败。
 - `maxVideoMB`：默认 40MB，对下载总量和最终输出都检查。不能在下载限额内取得源文件时停止，不继续下载大文件尝试压缩。
 - `concurrency` / `queueSize`：默认 1 个处理中、3 个等待中；相同输入及解析后的相同视频任务去重。

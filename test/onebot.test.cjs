@@ -257,7 +257,9 @@ test('event bursts are persisted and delivered to administrator private chat des
     5000,
   )
   for (const user of [3000, 3001, 3002])
-    assert.ok(wire.sent.some((n) => n.action === 'send_private_msg' && n.text.includes(`用户：${user}`)))
+    assert.ok(
+      wire.sent.some((n) => n.action === 'send_private_forward_msg' && n.text.includes(`用户：${user}`)),
+    )
 })
 test('song sessions isolate user/group; selection, paging and lyrics use real Koishi commands', async () => {
   assert.match((await wire.command('点歌 搜索 测试')).text, /第 1\/3 页/)
@@ -334,6 +336,13 @@ test('video command downloads, processes and emits an actual OneBot video segmen
   assert.equal(Buffer.from(encoded.slice(9), 'base64').subarray(4, 8).toString(), 'ftyp')
   assert.match((await wire.command('视频解析 任务')).text, /平台已确认发送/)
   assert.match((await wire.command('视频解析 任务', 1002)).text, /没有视频任务/)
+})
+test('video prefix commands explain unrecognized links explicitly', async () => {
+  const text = (await wire.command('视频解析 https://youtube.com/watch?v=abc', 1001, 500, (n) =>
+    n.text.includes('无法识别'),
+  )).text
+  assert.match(text, /无法识别/)
+  assert.match(text, /仅支持 B站、抖音、小红书/)
 })
 
 test('automatic video parsing only consumes supported links in configured groups', async () => {

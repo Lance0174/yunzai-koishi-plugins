@@ -48,9 +48,10 @@ test('management works with no group allowlist, and default notices go to admini
   assert.match((await cmd('禁言 2001 1m')).text, /平台已确认/)
   join(2002)
   const notification = await waitFor(() =>
-    wire.sent.find((r) => r.text.includes('成员加入') && r.text.includes('用户：2002')),
+    wire.sent.find(
+      (r) => r.action === 'send_private_forward_msg' && r.text.includes('成员加入') && r.text.includes('用户：2002'),
+    ),
   )
-  assert.equal(notification.action, 'send_private_msg')
   assert.equal(notification.params.user_id, 1001)
   assert.equal(
     wire.sent.some((r) => r.action === 'send_group_msg' && r.text.includes('成员加入')),
@@ -132,10 +133,10 @@ test('verification timeouts use the independent listener destinations even witho
   })
   const notice = await waitFor(() =>
     wire.sent.find(
-      (r) => r.text.includes('入群验证超时') && r.text.includes('2060') && r.params.user_id === 1002,
+      (r) => r.action === 'send_private_forward_msg' && r.text.includes('入群验证超时') && r.text.includes('2060'),
     ),
   )
-  assert.equal(notice.action, 'send_private_msg')
+  assert.equal(notice.params.user_id, 1002)
   assert.equal(
     wire.actions.some((a) => a.action === 'set_group_kick' && a.params.user_id === 2060),
     false,

@@ -125,10 +125,16 @@ export function apply(ctx: Context, config: Config) {
     })
   })
   const error = (e: unknown) => (e instanceof PublicError ? e.message : '视频处理失败，请稍后再试。')
+  const cookieHint = (input?: { site: 'bilibili' | 'douyin' | 'xiaohongshu' }) => {
+    if (!input) return '仅支持 B站、抖音、小红书的视频链接或 BV 号；其他平台或图文暂不处理。'
+    const key =
+      input.site === 'bilibili' ? 'biliCookie' : input.site === 'douyin' ? 'douyinCookie' : 'xhsCookie'
+    return `可在 Koishi 控制台的“${config.command}”插件配置中填写 ${key}（可选登录态）后重试。`
+  }
   async function run(s: Session, content: string, preview: boolean, part: number, automatic = false) {
     if (disposed || !s.userId || !s.channelId) return '当前会话不可用。'
     const input = identify(content)
-    if (!input) return '仅支持 B站、抖音、小红书的视频链接或 BV 号。'
+    if (!input) return automatic ? undefined : `无法识别的链接。${cookieHint()}`
     const owner = ownerKey(s)
     if (Date.now() - (last.get(owner) ?? 0) < config.cooldown)
       return automatic ? undefined : '操作过于频繁，请稍后再试。'
@@ -209,7 +215,11 @@ export function apply(ctx: Context, config: Config) {
     } catch (e) {
       if (!disposed)
         return h.text(
-          `${ticket && config.showProgress ? `任务 ${ticket.id}：` : ''}${error(e)}\n原链接：${input.url}`,
+          `${ticket && config.showProgress ? `任务 ${ticket.id}：` : ''}${error(e)}` +
+            (e instanceof PublicError && /Cookie|权限|验证|登录|未提供|不可访问|失效/i.test(e.message)
+              ? `\n${cookieHint(input)}`
+              : '') +
+            `\n原链接：${input.url}`,
         )
     }
   }

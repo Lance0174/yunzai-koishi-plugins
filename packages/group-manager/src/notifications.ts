@@ -86,6 +86,11 @@ export class Notifications {
       s.subtype ?? '',
       String(s.event.timestamp ?? ''),
     )
+    const onebot = ((s as any).onebot ?? {}) as Record<string, any>
+    const sender = onebot.sender ?? {}
+    const name = String(
+      sender.card ?? sender.nickname ?? onebot.nickname ?? s.userId ?? '未知',
+    ).slice(0, 120)
     for (const target of targets) {
       // Do not mirror a destination's own messages back into itself.
       if (topic.endsWith('消息') && target === (guild ? `g:${guild}` : `p:${s.userId}`)) continue
@@ -94,7 +99,7 @@ export class Notifications {
         target,
         id,
         `${description}\n机器人：${s.selfId}${guild ? `；群：${guild}` : ''}\n用户：${s.userId || '未知'}；操作人：${s.operatorId || '未知'}`,
-        { guildId: guild, topic },
+        { guildId: guild, topic, user: s.userId ?? '', name },
       )
     }
     await host.flush()

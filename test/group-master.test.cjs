@@ -168,10 +168,25 @@ test('event notices describe the concrete change instead of a bare summary', asy
     operator_id: 1001,
     message_id: 4103,
   })
-  await waitFor(() => wire.sent.some((n) => n.action === 'send_private_msg' && n.text.includes('被管理员移出')))
-  assert.ok(wire.sent.some((n) => n.text.includes('成员被管理员移出（操作人 1001）') && n.text.includes('用户：3101')))
-  assert.ok(wire.sent.some((n) => n.text.includes('被禁言 600 秒') && n.text.includes('用户：3102')))
-  assert.ok(wire.sent.some((n) => n.text.includes('群消息撤回') && n.text.includes('发送者 3103')))
+  await waitFor(() =>
+    wire.sent.some((n) => n.action === 'send_private_forward_msg' && n.text.includes('被管理员移出')),
+  )
+  assert.ok(
+    wire.sent.some(
+      (n) => n.action === 'send_private_forward_msg' && n.text.includes('成员被管理员移出（操作人 1001）'),
+    ),
+  )
+  assert.ok(
+    wire.sent.some((n) => n.action === 'send_private_forward_msg' && n.text.includes('被禁言 600 秒')),
+  )
+  assert.ok(
+    wire.sent.some((n) => n.action === 'send_private_forward_msg' && n.text.includes('发送者 3103')),
+  )
+  const node = wire.actions
+    .filter((a) => a.action === 'send_private_forward_msg')
+    .at(-1)?.params.messages?.[0]
+  assert.equal(node?.data?.uin, '3101')
+  assert.ok(node?.data?.time)
 })
 
 test('recurring schedules re-queue after executing exactly once', async () => {

@@ -64,6 +64,9 @@ export interface EventRow {
   state: string
   claim: string
   lease: number
+  // Author context for merged-message rendering; optional on legacy rows.
+  user?: string
+  name?: string
 }
 declare module 'koishi' {
   interface Tables {
@@ -91,6 +94,8 @@ export function models(ctx: Context) {
       state: 'string(20)',
       claim: 'string(40)',
       lease: 'double',
+      user: 'string(80)',
+      name: 'string(120)',
     },
     { primary: 'id' },
   )
@@ -359,7 +364,7 @@ export class Store {
     channel: string,
     eventId: string,
     summary: string,
-    source = { guildId: '', topic: '' },
+    source: { guildId?: string; topic?: string; user?: string; name?: string } = {},
   ) {
     return this.atomic(async (db) => {
       const id = key(bot, channel, eventId)
@@ -377,13 +382,16 @@ export class Store {
         id,
         bot,
         channel,
-        ...source,
+        guildId: source.guildId ?? '',
+        topic: source.topic ?? '',
         summary: summary.slice(0, 1000),
         count: 1,
         created: this.now(),
         state: 'pending',
         claim: '',
         lease: 0,
+        user: source.user ?? '',
+        name: source.name ?? '',
       })
     })
   }
